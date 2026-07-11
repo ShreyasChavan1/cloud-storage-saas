@@ -5,6 +5,7 @@ import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
+import { AxiosError } from 'axios'
 
 export default function Register() {
   const { register } = useAuth()
@@ -27,9 +28,18 @@ export default function Register() {
     }
     setError('')
     setLoading(true)
+    try {
     await register(name, email, password)
-    setLoading(false)
     navigate('/dashboard')
+  } catch (err) {
+    const message =
+      err instanceof AxiosError
+        ? err.response?.data?.error?.message
+        : undefined
+    setError(message ?? 'Something went wrong. Please try again.')
+  } finally {
+    setLoading(false)
+  }
   }
 
   return (

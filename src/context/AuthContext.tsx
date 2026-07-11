@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
-import { currentUser } from '@/data/dummyData'
+import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import { api, setAccessToken } from '../lib/api'
 
 interface AuthUser {
   name: string
@@ -11,51 +11,54 @@ interface AuthUser {
 interface AuthContextValue {
   user: AuthUser | null
   isAuthenticated: boolean
+  loading: boolean
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
-  logout: () => void
+  logout: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-// NOTE: Phase 1 is UI-only. These calls simulate network latency and always
-// succeed — real authentication will be wired to the Express API in Phase 2.
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    return localStorage.getItem('nimbus-demo-auth') ? currentUser : null
-  })
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [loading, setLoading] = useState(true) // true while we check for an existing session
 
-  const login = async (_email: string, _password: string) => {
-    await new Promise((r) => setTimeout(r, 600))
-    localStorage.setItem('nimbus-demo-auth', '1')
-    setUser(currentUser)
+  // On first load, there's no access token in memory yet (page refresh wipes
+  // it), so try a silent refresh using the httpOnly cookie to restore the session.
+  useEffect(() => {
+    api
+      .post('/auth/refresh')
+      .then(({ data }) => {
+        setAccessToken(data.data.accessToken)
+        setUser(data.data.user)
+      })
+      .catch(() => setAccessToken(null))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const login = async (email: string, password: string) => {
+    const { data } = await api.post('/auth/login', { email, password })
+    setAccessToken(data.data.accessToken)
+    setUser(data.data.user)
   }
 
-  const register = async (name: string, email: string, _password: string) => {
-    await new Promise((r) => setTimeout(r, 600))
-    localStorage.setItem('nimbus-demo-auth', '1')
-    setUser({ ...currentUser, name, email, avatarInitials: initials(name) })
+  const register = async (name: string, email: string, password: string) => {
+    const { data } = await api.post('/auth/register', { name, email, password })
+    setAccessToken(data.data.accessToken)
+    setUser(data.data.user)
   }
 
-  const logout = () => {
-    localStorage.removeItem('nimbus-demo-auth')
+  const logout = async () => {
+    await api.post('/auth/logout')
+    setAccessToken(null)
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   )
-}
-
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((p) => p[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
 }
 
 export function useAuth() {

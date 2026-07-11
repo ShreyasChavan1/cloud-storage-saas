@@ -5,6 +5,7 @@ import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
+import { AxiosError } from 'axios'
 
 export default function Login() {
   const { login } = useAuth()
@@ -15,17 +16,26 @@ export default function Login() {
   const [error, setError] = useState('')
 
   const handleSubmit = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!email || !password) {
-      setError('Enter your email and password to continue.')
-      return
-    }
-    setError('')
-    setLoading(true)
-    await login(email, password)
-    setLoading(false)
-    navigate('/dashboard')
+  e.preventDefault()
+  if (!email || !password) {
+    setError('Enter your email and password to continue.')
+    return
   }
+  setError('')
+  setLoading(true)
+  try {
+    await login(email, password)
+    navigate('/dashboard')
+  } catch (err) {
+    const message =
+      err instanceof AxiosError
+        ? err.response?.data?.error?.message
+        : undefined
+    setError(message ?? 'Something went wrong. Please try again.')
+  } finally {
+    setLoading(false)
+  }
+}
 
   return (
     <AuthLayout title="Welcome back" subtitle="Log in to keep working on your files.">
