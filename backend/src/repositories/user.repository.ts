@@ -21,4 +21,10 @@ export const userRepository = {
   update(id: string, data: Prisma.UserUpdateInput): Promise<UserWithPlan> {
     return prisma.user.update({ where: { id }, data, include: { plan: true } })
   },
+
+  // Only used to compensate a failed registration (Postgres user created
+  // but Nextcloud provisioning failed) — never exposed via any route.
+  delete(id: string): Promise<UserWithPlan> {
+    return prisma.user.delete({ where: { id }, include: { plan: true } })
+  },
 }

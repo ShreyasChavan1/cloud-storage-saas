@@ -16,6 +16,16 @@ const envSchema = z.object({
 
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
 
+  // Nextcloud OCS Provisioning API — used server-side only, never exposed
+  // to the client. Use an app password (Settings > Security > Devices &
+  // sessions), not the admin account's actual login password.
+  NEXTCLOUD_URL: z
+    .string()
+    .url('NEXTCLOUD_URL must be a full URL, e.g. https://cloud.example.com')
+    .transform((url) => url.replace(/\/+$/, '')), // strip trailing slash(es)
+  NEXTCLOUD_ADMIN_USER: z.string().min(1, 'NEXTCLOUD_ADMIN_USER is required'),
+  NEXTCLOUD_ADMIN_PASSWORD: z.string().min(1, 'NEXTCLOUD_ADMIN_PASSWORD is required'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
 

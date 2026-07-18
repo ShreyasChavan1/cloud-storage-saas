@@ -3,6 +3,7 @@ import { userRepository } from '../repositories/user.repository'
 import { sessionRepository } from '../repositories/session.repository'
 import { planRepository } from '../repositories/plan.repository'
 import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
+import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { toAuthUserDTO } from '../models/user.model'
 import { hashPassword, comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
@@ -42,6 +43,10 @@ export const authService = {
 
     const passwordHash = await hashPassword(input.password)
 
+    // 1. Create the PostgreSQL user first — it's the source of truth for
+    // "does this account exist", and gives us a stable, unique id to use
+    // as the Nextcloud username (sidesteps Nextcloud's username character
+    // restrictions entirely — a UUID is always valid).
     const user = await userRepository.create({
       name: input.name,
       email: input.email,
@@ -49,9 +54,26 @@ export const authService = {
       plan: { connect: { id: defaultPlan.id } },
     })
 
-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email)
+    // 2. Provision the matching Nextcloud account, quota-limited to the
+    // user's plan. If this fails, roll back the Postgres user rather than
+    // leaving an account with no storage backend behind it.
+    const nextcloudUsername = user.id
+    try {
+      await nextcloudService.createUser(nextcloudUsername, input.password, defaultPlan.storageLimit)
+    } catch (err) {
+      await userRepository.delete(user.id)
+      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
+      logger.error({ userId: user.id, detail }, 'Nextcloud provisioning failed — rolled back Postgres user')
+      throw ApiError.serviceUnavailable('Could not set up your storage account. Please try again.')
+    }
 
-    return { user: toAuthUserDTO(user), accessToken, refreshToken }
+    // 3. Store the nextcloud_username now that provisioning succeeded.
+    const provisionedUser = await userRepository.update(user.id, { nextcloudUsername })
+
+    // 4. Return JWT.
+    const { accessToken, refreshToken } = await issueTokenPair(provisionedUser.id, provisionedUser.email)
+
+    return { user: toAuthUserDTO(provisionedUser), accessToken, refreshToken }
   },
 
   async login(input: LoginInput): Promise<AuthResponseDTO & { refreshToken: string }> {

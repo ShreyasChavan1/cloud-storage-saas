@@ -4,6 +4,6 @@ module.exports = {
   testEnvironment: 'node',
   rootDir: '.',
   testMatch: ['<rootDir>/tests/**/*.test.ts'],
-  setupFiles: ['dotenv/config'],
+  setupFiles: ['<rootDir>/tests/jest.setup.ts'],
   clearMocks: true,
 }

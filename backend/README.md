@@ -81,6 +81,45 @@ Replace `AuthContext.tsx`'s three dummy functions with calls to this API
 - `logout()` → `POST /api/auth/logout`
 - On app load, call `GET /api/auth/me` (if an access token is held) to restore the session instead of the current `localStorage.getItem('nimbus-demo-auth')` check.
 
+## Nextcloud integration (Phase 5)
+`src/services/NextcloudService.ts` is a thin client around Nextcloud's OCS
+Provisioning API — `createUser`, `deleteUser`, `changePassword`, `setQuota`,
+`getQuota`. It's the **only** place `NEXTCLOUD_ADMIN_USER` /
+`NEXTCLOUD_ADMIN_PASSWORD` are read; they're never logged, never returned in
+any API response, and errors surfaced to callers strip everything except
+Nextcloud's own message field.
+
+**Registration now does two provisioning steps, not one:**
+```
+Create PostgreSQL user
+       ↓
+Create Nextcloud user (quota = the user's plan storage limit)
+       ↓
+Store nextcloud_username (= the Postgres user's own UUID)
+       ↓
+Return JWT
+```
+If Nextcloud provisioning fails, the just-created Postgres user is deleted
+and registration fails with a `503` — there's no code path that leaves a
+Postgres account with no matching storage backend.
+
+The Nextcloud username is deliberately the same UUID as the Postgres `id`,
+not something derived from the email — guarantees uniqueness and sidesteps
+Nextcloud's username character restrictions entirely.
+
+**`deleteUser`, `setQuota`, and `getQuota` are implemented but not yet wired
+into any route** — no account-deletion or plan-upgrade endpoint exists yet.
+`changePassword` is likewise implemented but there's no password-change
+route to call it from yet (ties into the still-open `forgot-password` /
+`reset-password` gap noted above — completing that flow should call both
+`comparePassword`'s hash update AND `nextcloudService.changePassword` so the
+two stay in sync).
+
+Setup: create an **app password** in Nextcloud (Settings → Security →
+"Devices & sessions" → create new app password) rather than using the admin
+account's real login password, and put it in `.env` as
+`NEXTCLOUD_ADMIN_PASSWORD`.
+
 ## Not included in this phase
 File/folder storage, uploads, sharing, and any Nextcloud/WebDAV integration
 are explicitly out of scope here, per the Phase 2 spec.
