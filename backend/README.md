@@ -51,11 +51,12 @@ docker run --name nimbus-db -e POSTGRES_USER=nimbus -e POSTGRES_PASSWORD=nimbus 
 |---|---|---|---|
 | POST | `/api/auth/register` | – | Create account, returns access token + sets refresh cookie |
 | POST | `/api/auth/login`    | – | Returns access token + sets refresh cookie |
-| POST | `/api/auth/refresh`  | refresh cookie | Rotates refresh token, returns a new access token |
-| POST | `/api/auth/logout`   | refresh cookie | Revokes the refresh token |
+| POST | `/api/auth/logout`   | refresh cookie | Deletes the current session |
+| POST | `/api/auth/forgot-password` | – | Issues a password reset token (stored hashed in Postgres). Always returns the same generic message; no email transport is wired up yet — see note below. |
 | GET  | `/api/auth/me`       | Bearer access token | Current user |
+| POST | `/api/auth/refresh-token` | refresh cookie | Rotates the session, returns a new access token |
 | GET  | `/api/users/me`      | Bearer access token | Current user profile |
-| PATCH| `/api/users/me`      | Bearer access token | Update name (re-derives avatar initials) |
+| PATCH| `/api/users/me`      | Bearer access token | Update name (avatar initials are derived, not stored) |
 | GET  | `/api/health`        | – | Liveness check |
 
 All responses use the envelope `{ success, data }` or `{ success: false, error: { message, details } }`.
@@ -83,3 +84,12 @@ Replace `AuthContext.tsx`'s three dummy functions with calls to this API
 ## Not included in this phase
 File/folder storage, uploads, sharing, and any Nextcloud/WebDAV integration
 are explicitly out of scope here, per the Phase 2 spec.
+
+## Known gap: password reset is not end-to-end yet
+`POST /api/auth/forgot-password` generates a reset token, stores its hash in
+`password_reset_tokens`, and logs it — but there's no email transport
+configured, and no `POST /api/auth/reset-password` route yet to consume the
+token and actually change the password. Outside `NODE_ENV=production`, the
+raw token is returned in the response body (`devToken`) so you can test the
+flow manually via Prisma Studio or curl until a completion endpoint and a
+real mailer (e.g. Resend, SES, Postmark) are wired up.

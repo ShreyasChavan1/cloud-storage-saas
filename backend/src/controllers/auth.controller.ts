@@ -47,6 +47,18 @@ export const authController = {
     return sendSuccess(res, result, 200)
   }),
 
+  forgotPassword: asyncHandler(async (req: Request, res: Response) => {
+    const { devToken } = await authService.forgotPassword(req.body)
+
+    // Same response whether or not the email is registered — never reveal
+    // which one it was.
+    return sendSuccess(res, {
+      message: 'If an account exists for that email, a reset link has been sent.',
+      // Only present outside production, and only while no mailer exists.
+      ...(devToken ? { devToken } : {}),
+    })
+  }),
+
   logout: asyncHandler(async (req: Request, res: Response) => {
     const token = req.cookies?.[REFRESH_COOKIE_NAME]
     await authService.logout(token)

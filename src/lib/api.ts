@@ -28,12 +28,12 @@ api.interceptors.response.use(
     const original = error.config
 
     // Never try to "refresh" a failed refresh call — that's what's looping.
-    const isRefreshCall = original?.url?.includes('/auth/refresh')
+    const isRefreshCall = original?.url?.includes('/auth/refresh-token')
 
     if (error.response?.status === 401 && !original._retry && !isRefreshCall) {
       original._retry = true
       try {
-        const { data } = await api.post('/auth/refresh')
+        const { data } = await api.post('/auth/refresh-token')
         setAccessToken(data.data.accessToken)
         original.headers.Authorization = `Bearer ${data.data.accessToken}`
         return api(original)

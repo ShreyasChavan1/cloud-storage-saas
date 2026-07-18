@@ -27,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // it), so try a silent refresh using the httpOnly cookie to restore the session.
   useEffect(() => {
     api
-      .post('/auth/refresh')
+      .post('/auth/refresh-token')
       .then(({ data }) => {
         setAccessToken(data.data.accessToken)
         setUser(data.data.user)

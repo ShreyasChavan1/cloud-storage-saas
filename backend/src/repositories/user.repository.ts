@@ -1,20 +1,24 @@
-import { Prisma, User } from '@prisma/client'
+import { Prisma } from '@prisma/client'
 import { prisma } from '../database/prisma'
+import { UserWithPlan } from '../models/user.model'
 
+// Every read includes `plan` — the mapper (toAuthUserDTO) always needs
+// plan.name, so it's simpler to fetch it consistently here than to remember
+// to `include` it at every call site.
 export const userRepository = {
-  findByEmail(email: string): Promise<User | null> {
-    return prisma.user.findUnique({ where: { email } })
+  findByEmail(email: string): Promise<UserWithPlan | null> {
+    return prisma.user.findUnique({ where: { email }, include: { plan: true } })
   },
 
-  findById(id: string): Promise<User | null> {
-    return prisma.user.findUnique({ where: { id } })
+  findById(id: string): Promise<UserWithPlan | null> {
+    return prisma.user.findUnique({ where: { id }, include: { plan: true } })
   },
 
-  create(data: Prisma.UserCreateInput): Promise<User> {
-    return prisma.user.create({ data })
+  create(data: Prisma.UserCreateInput): Promise<UserWithPlan> {
+    return prisma.user.create({ data, include: { plan: true } })
   },
 
-  update(id: string, data: Prisma.UserUpdateInput): Promise<User> {
-    return prisma.user.update({ where: { id }, data })
+  update(id: string, data: Prisma.UserUpdateInput): Promise<UserWithPlan> {
+    return prisma.user.update({ where: { id }, data, include: { plan: true } })
   },
 }

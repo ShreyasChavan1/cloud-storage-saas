@@ -1,5 +1,6 @@
-// Prisma schema — Nimbus backend (Phase 2)
-// Run `npm run prisma:migrate` after setting DATABASE_URL in .env
+// Prisma schema — Nimbus backend (Phase 3: billing & subscriptions)
+// Run `npm run prisma:migrate` after setting DATABASE_URL in .env,
+// then `npm run prisma:seed` to load the default plans.
 
 generator client {
   provider = "prisma-client-js"
@@ -10,38 +11,125 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Plan {
-  STARTER
-  PRO
-  TEAM
+enum Role {
+  USER
+  ADMIN
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELED
+  PAST_DUE
+  TRIALING
+  EXPIRED
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
 }
 
 model User {
-  id             String   @id @default(uuid())
-  name           String
-  email          String   @unique
-  passwordHash   String
-  avatarInitials String
-  plan           Plan     @default(STARTER)
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  id           String @id @default(uuid())
+  name         String
+  email        String @unique
+  passwordHash String @map("password_hash")
+  role         Role   @default(USER)
 
-  refreshTokens RefreshToken[]
+  // Denormalized pointer to the user's current plan, for cheap reads
+  // (dashboard storage limits etc.) without joining through subscriptions.
+  // `subscriptions` below is the source of truth / billing history.
+  planId String? @map("plan_id")
+  plan   Plan?   @relation(fields: [planId], references: [id])
+
+  // Reserved for a future phase — not wired to Nextcloud yet.
+  nextcloudUsername String? @map("nextcloud_username")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subscriptions       Subscription[]
+  payments            Payment[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 
   @@map("users")
 }
 
-// Stored (hashed) so a leaked DB row can't be replayed as a live session,
-// and so individual sessions/devices can be revoked without a password reset.
-model RefreshToken {
-  id        String   @id @default(uuid())
-  tokenHash String   @unique
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  expiresAt DateTime
-  revokedAt DateTime?
-  createdAt DateTime @default(now())
+model Plan {
+  id   String @id @default(uuid())
+  name String @unique
+  // Storage ceiling in gigabytes (Free=5, Basic=100, Pro=500).
+  storageLimit Int     @map("storage_limit")
+  price        Decimal @db.Decimal(10, 2)
+
+  users         User[]
+  subscriptions Subscription[]
+
+  @@map("plans")
+}
+
+model Subscription {
+  id     String             @id @default(uuid())
+  userId String             @map("user_id")
+  user   User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status SubscriptionStatus @default(ACTIVE)
+
+  planId String @map("plan_id")
+  plan   Plan   @relation(fields: [planId], references: [id])
+
+  renewalDate DateTime @map("renewal_date")
 
   @@index([userId])
-  @@map("refresh_tokens")
+  @@map("subscriptions")
+}
+
+model Payment {
+  id     String        @id @default(uuid())
+  userId String        @map("user_id")
+  user   User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  amount Decimal       @db.Decimal(10, 2)
+  status PaymentStatus @default(PENDING)
+  // Free-text rather than an enum — new providers (Stripe, Razorpay, PayPal...)
+  // shouldn't require a schema migration to add.
+  provider String
+
+  @@index([userId])
+  @@map("payments")
+}
+
+// One row per active login session. Login/refresh create a row; logout or
+// refresh-rotation deletes it — so "row exists and isn't expired" IS the
+// validity check, no separate revoked flag needed.
+model Session {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // SHA-256 hash of the refresh token, never the raw value — a leaked DB
+  // row can't be replayed as a live session.
+  refreshToken String   @unique @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+// Issued by POST /forgot-password. Only the hash is stored — same pattern
+// as Session — so a leaked DB row can't be used to reset someone's password.
+// `usedAt` prevents a token being replayed after a successful reset.
+model PasswordResetToken {
+  id     String @id @default(uuid())
+  userId String @map("user_id")
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  tokenHash String    @unique @map("token_hash")
+  expiresAt DateTime  @map("expires_at")
+  usedAt    DateTime? @map("used_at")
+  createdAt DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("password_reset_tokens")
 }

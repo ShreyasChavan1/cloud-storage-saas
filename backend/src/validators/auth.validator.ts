@@ -18,6 +18,12 @@ export const loginSchema = z.object({
   }),
 })
 
+export const forgotPasswordSchema = z.object({
+  body: z.object({
+    email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+  }),
+})
+
 export const updateProfileSchema = z.object({
   body: z.object({
     name: z.string().trim().min(2).max(80).optional(),
@@ -26,4 +32,5 @@ export const updateProfileSchema = z.object({
 
 export type RegisterInput = z.infer<typeof registerSchema>['body']
 export type LoginInput = z.infer<typeof loginSchema>['body']
+export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>['body']
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>['body']

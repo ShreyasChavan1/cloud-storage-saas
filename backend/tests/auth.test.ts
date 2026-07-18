@@ -66,4 +66,23 @@ describe('Auth flow', () => {
     const res = await request(app).get('/api/auth/me')
     expect(res.status).toBe(401)
   })
+
+  it('issues a reset token for a known email (dev mode)', async () => {
+    const res = await request(app).post('/api/auth/forgot-password').send({ email: testUser.email })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.message).toMatch(/if an account exists/i)
+    // devToken only present outside production — this suite runs with NODE_ENV=test
+    expect(res.body.data.devToken).toBeDefined()
+  })
+
+  it('returns the same generic message for an unknown email (no enumeration)', async () => {
+    const res = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: 'definitely-not-registered@example.com' })
+
+    expect(res.status).toBe(200)
+    expect(res.body.data.message).toMatch(/if an account exists/i)
+    expect(res.body.data.devToken).toBeUndefined()
+  })
 })

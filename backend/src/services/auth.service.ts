@@ -1,30 +1,25 @@
 import ms from 'ms'
 import { userRepository } from '../repositories/user.repository'
-import { refreshTokenRepository } from '../repositories/refreshToken.repository'
+import { sessionRepository } from '../repositories/session.repository'
+import { planRepository } from '../repositories/plan.repository'
+import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
 import { toAuthUserDTO } from '../models/user.model'
 import { hashPassword, comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
+import { generateRandomToken } from '../utils/token'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
-import { RegisterInput, LoginInput } from '../validators/auth.validator'
+import { DEFAULT_PLAN_NAME } from '../config/plans'
+import { logger } from '../config/logger'
+import { RegisterInput, LoginInput, ForgotPasswordInput } from '../validators/auth.validator'
 import { AuthResponseDTO } from '../types/auth.types'
-
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
-}
 
 async function issueTokenPair(userId: string, email: string) {
   const accessToken = signAccessToken({ sub: userId, email })
   const { token: refreshToken } = signRefreshToken({ sub: userId, email })
 
   const expiresAt = new Date(Date.now() + ms(env.JWT_REFRESH_EXPIRES_IN))
-  await refreshTokenRepository.store(userId, hashToken(refreshToken), expiresAt)
+  await sessionRepository.create(userId, hashToken(refreshToken), expiresAt)
 
   return { accessToken, refreshToken }
 }
@@ -36,15 +31,22 @@ export const authService = {
       throw ApiError.conflict('An account with this email already exists')
     }
 
+    const defaultPlan = await planRepository.findByName(DEFAULT_PLAN_NAME)
+    if (!defaultPlan) {
+      // Fails loudly rather than silently creating a plan-less account —
+      // almost always means `npm run prisma:seed` hasn't been run yet.
+      throw ApiError.internal(
+        `Default plan "${DEFAULT_PLAN_NAME}" not found. Run "npm run prisma:seed" to seed plans.`
+      )
+    }
+
     const passwordHash = await hashPassword(input.password)
 
     const user = await userRepository.create({
       name: input.name,
       email: input.email,
       passwordHash,
-      avatarInitials: initials(input.name),
-      // New accounts start on Starter — matches the Pricing page's free tier.
-      plan: 'STARTER',
+      plan: { connect: { id: defaultPlan.id } },
     })
 
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email)
@@ -79,9 +81,9 @@ export const authService = {
     }
 
     const tokenHash = hashToken(rawRefreshToken)
-    const stored = await refreshTokenRepository.findValidByHash(tokenHash)
+    const stored = await sessionRepository.findValidByHash(tokenHash)
     if (!stored) {
-      throw ApiError.unauthorized('Refresh token has been revoked or expired')
+      throw ApiError.unauthorized('Session has expired or was already used')
     }
 
     const user = await userRepository.findById(payload.sub)
@@ -89,9 +91,9 @@ export const authService = {
       throw ApiError.unauthorized('User no longer exists')
     }
 
-    // Rotate: revoke the presented token and issue a brand new pair. Limits
+    // Rotate: delete the presented session and issue a brand new one. Limits
     // the blast radius if a refresh token is ever stolen from storage.
-    await refreshTokenRepository.revokeByHash(tokenHash)
+    await sessionRepository.deleteByHash(tokenHash)
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email)
 
     return { user: toAuthUserDTO(user), accessToken, refreshToken }
@@ -99,12 +101,39 @@ export const authService = {
 
   async logout(rawRefreshToken: string | undefined): Promise<void> {
     if (!rawRefreshToken) return
-    await refreshTokenRepository.revokeByHash(hashToken(rawRefreshToken))
+    await sessionRepository.deleteByHash(hashToken(rawRefreshToken))
   },
 
   async me(userId: string) {
     const user = await userRepository.findById(userId)
     if (!user) throw ApiError.notFound('User not found')
     return toAuthUserDTO(user)
+  },
+
+  // Always resolves the same way whether or not the email exists — the
+  // caller (controller) returns an identical generic message either way,
+  // so this endpoint can't be used to enumerate registered emails.
+  async forgotPassword(input: ForgotPasswordInput): Promise<{ devToken?: string }> {
+    const user = await userRepository.findByEmail(input.email)
+    if (!user) {
+      return {}
+    }
+
+    // Only one live reset link at a time.
+    await passwordResetTokenRepository.deleteAllForUser(user.id)
+
+    const rawToken = generateRandomToken()
+    const expiresAt = new Date(Date.now() + ms(env.PASSWORD_RESET_TOKEN_EXPIRES_IN))
+    await passwordResetTokenRepository.create(user.id, hashToken(rawToken), expiresAt)
+
+    // No email transport is wired up yet — log it so it's visible in dev,
+    // and hand it back in the response ONLY outside production so you can
+    // test the flow. Wire up a real mailer before shipping this.
+    logger.info({ email: user.email }, 'Password reset token issued (email delivery not yet implemented)')
+
+    if (env.NODE_ENV !== 'production') {
+      return { devToken: rawToken }
+    }
+    return {}
   },
 }
