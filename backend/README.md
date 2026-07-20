@@ -82,43 +82,72 @@ Replace `AuthContext.tsx`'s three dummy functions with calls to this API
 - On app load, call `GET /api/auth/me` (if an access token is held) to restore the session instead of the current `localStorage.getItem('nimbus-demo-auth')` check.
 
 ## Nextcloud integration (Phase 5)
-`src/services/NextcloudService.ts` is a thin client around Nextcloud's OCS
-Provisioning API — `createUser`, `deleteUser`, `changePassword`, `setQuota`,
-`getQuota`. It's the **only** place `NEXTCLOUD_ADMIN_USER` /
-`NEXTCLOUD_ADMIN_PASSWORD` are read; they're never logged, never returned in
-any API response, and errors surfaced to callers strip everything except
-Nextcloud's own message field.
+`src/services/NextcloudService.ts` provisions Nextcloud accounts by calling
+a small standalone **agent** (`../nextcloud-agent`, a sibling project — see
+its own README) that runs **on the Nextcloud server itself** and exposes
+five operations over HTTP, authenticated by a shared bearer token.
 
-**Registration now does two provisioning steps, not one:**
+**Why not the OCS Provisioning HTTP API directly:** Nextcloud has a
+long-standing, currently open bug
+([nextcloud/server#51637](https://github.com/nextcloud/server/issues/51637))
+where sensitive OCS endpoints (create/delete user, change password) reject
+even fully valid app-password Basic-Auth requests with `403 Password
+confirmation is required`. Confirmed directly against a real instance during
+development — a fresh app password, no 2FA on the account, a full session
+logout, and raising `password_confirm_timeout` all made no difference;
+read-only OCS calls (e.g. listing users) work fine, only the write endpoints
+are affected.
+
+**Why not SSH from this backend directly:** an SSH key grants full shell
+access on the Nextcloud server — a much larger blast radius than this needs.
+The agent's bearer token only grants access to five specific operations, and
+there's no private key to protect on the machine running this backend at
+all (worth mentioning since this backend may run somewhere other than where
+you develop it — a leaked `.env` here only leaks that one token, not shell
+access to another server).
+
+**Registration flow:**
 ```
 Create PostgreSQL user
        ↓
-Create Nextcloud user (quota = the user's plan storage limit)
+Create Nextcloud user via the agent, quota = the user's plan limit
        ↓
 Store nextcloud_username (= the Postgres user's own UUID)
        ↓
 Return JWT
 ```
 If Nextcloud provisioning fails, the just-created Postgres user is deleted
-and registration fails with a `503` — there's no code path that leaves a
-Postgres account with no matching storage backend.
+and registration fails with a `503` — no code path leaves a Postgres account
+with no matching storage backend.
 
-The Nextcloud username is deliberately the same UUID as the Postgres `id`,
-not something derived from the email — guarantees uniqueness and sidesteps
-Nextcloud's username character restrictions entirely.
+**Setup:**
+1. Deploy `../nextcloud-agent` onto the Nextcloud server itself — see its
+   README for the full walkthrough (generating a token, firewalling the
+   port to only your backend's IP, running it under `pm2` or systemd).
+2. In **this** project's `.env`:
+   ```
+   NEXTCLOUD_AGENT_URL=http://<nextcloud-server-ip>:4100
+   NEXTCLOUD_AGENT_TOKEN=<the exact same token set in the agent's own .env>
+   ```
 
-**`deleteUser`, `setQuota`, and `getQuota` are implemented but not yet wired
-into any route** — no account-deletion or plan-upgrade endpoint exists yet.
-`changePassword` is likewise implemented but there's no password-change
-route to call it from yet (ties into the still-open `forgot-password` /
-`reset-password` gap noted above — completing that flow should call both
-`comparePassword`'s hash update AND `nextcloudService.changePassword` so the
-two stay in sync).
+If you later deploy this backend onto the *same* machine as Nextcloud (the
+plan mentioned during development), the agent doesn't need to change at
+all — you'd just point `NEXTCLOUD_AGENT_URL` at `http://localhost:4100`
+instead of the public IP.
 
-Setup: create an **app password** in Nextcloud (Settings → Security →
-"Devices & sessions" → create new app password) rather than using the admin
-account's real login password, and put it in `.env` as
-`NEXTCLOUD_ADMIN_PASSWORD`.
+**`deleteUser` and `setQuota` are implemented but not yet wired into any
+route** — no account-deletion or plan-upgrade endpoint exists yet.
+**`changePassword` is likewise implemented but unused** — there's still no
+`reset-password` completion route (see the "Known gap" note above). Once
+that exists, it needs to call *both* the Postgres password update AND
+`nextcloudService.changePassword`, or the two systems' passwords will drift
+apart.
+
+**`getQuota` returns less than a direct OCS integration could have.** The
+agent can only report the *configured* quota via `occ` (e.g. `"5 GB"`) —
+`occ` has no clean equivalent of the OCS API's live usage stats (free/used/
+total/relative). `NextcloudQuota` reflects this honestly rather than faking
+numbers.
 
 ## Not included in this phase
 File/folder storage, uploads, sharing, and any Nextcloud/WebDAV integration

@@ -1,20 +1,28 @@
 import { env } from '../config/env'
 
 /**
- * Thin client around Nextcloud's OCS Provisioning API. This is the ONLY
- * place `NEXTCLOUD_ADMIN_USER` / `NEXTCLOUD_ADMIN_PASSWORD` are read — they
- * never leave this module, are never logged, and are never returned in any
- * response. Callers only ever see NextcloudApiError (sanitized) or the
- * typed data below.
+ * Nextcloud user provisioning via the standalone agent (../nextcloud-agent)
+ * running on the Nextcloud server itself — NOT the OCS HTTP API, and NOT
+ * SSH from this machine.
  *
- * Docs: https://docs.nextcloud.com/server/latest/admin_manual/configuration_user/instruction_set_for_users.html
+ * Why not the OCS API: Nextcloud has a long-standing, currently open bug
+ * (nextcloud/server#51637) where sensitive OCS endpoints (create/delete
+ * user, change password) reject even fully valid app-password Basic-Auth
+ * requests with "Password confirmation is required" (HTTP 403) — confirmed
+ * directly against a real instance: fresh app password, no 2FA, a full
+ * session logout, and raising password_confirm_timeout all made no
+ * difference. Read-only OCS calls work fine; only the write endpoints are
+ * affected.
+ *
+ * Why not SSH: an SSH key grants full shell access on the Nextcloud server.
+ * The agent's bearer token only grants access to five specific operations —
+ * a much smaller blast radius if it ever leaks, and there's no private key
+ * to protect on this machine at all.
+ *
+ * This is the only module that reads NEXTCLOUD_AGENT_TOKEN — it's sent as a
+ * Bearer header, never logged, never returned in any response.
  */
 
-// Thrown for any failure talking to Nextcloud — network error, non-2xx
-// HTTP status, or an OCS-level error embedded in a 200 response body.
-// Deliberately NOT an ApiError: this module has no knowledge of the HTTP
-// layer above it, so callers (services) translate this into whatever
-// client-facing error makes sense for the operation they were doing.
 export class NextcloudApiError extends Error {
   constructor(
     message: string,
@@ -25,92 +33,47 @@ export class NextcloudApiError extends Error {
   }
 }
 
-interface OcsEnvelope<T> {
-  ocs: {
-    meta: {
-      status: string
-      statuscode: number
-      message: string
-    }
-    data: T
-  }
-}
-
+// The agent can only report the CONFIGURED quota (occ has no equivalent of
+// the OCS API's live usage stats) — see nextcloud-agent's README.
 export interface NextcloudQuota {
-  free: number
-  used: number
-  total: number
-  relative: number
-  // The configured ceiling: a byte count, or the strings "none" / "default".
-  quota: number | string
+  quota: string
 }
 
-interface NextcloudUserDetails {
-  id: string
-  quota: NextcloudQuota
-  email: string | null
-  enabled: boolean
-}
-
-function authHeader(): string {
-  const credentials = `${env.NEXTCLOUD_ADMIN_USER}:${env.NEXTCLOUD_ADMIN_PASSWORD}`
-  return `Basic ${Buffer.from(credentials).toString('base64')}`
-}
-
-// Human-readable quota strings Nextcloud accepts, e.g. "5 GB". Storage
-// limits are tracked in GB throughout this backend (see prisma schema).
-function gbToQuotaString(gb: number): string {
-  return `${gb} GB`
-}
-
-async function ocsRequest<T>(
+async function agentRequest<T>(
   method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
-  body?: Record<string, string>
+  body?: Record<string, unknown>
 ): Promise<T> {
-  const url = `${env.NEXTCLOUD_URL}/ocs/v1.php${path}?format=json`
-
-  const headers: Record<string, string> = {
-    'OCS-APIRequest': 'true',
-    Accept: 'application/json',
-    Authorization: authHeader(),
-  }
-
-  let requestBody: string | undefined
-  if (body) {
-    requestBody = new URLSearchParams(body).toString()
-    headers['Content-Type'] = 'application/x-www-form-urlencoded'
-  }
+  const url = `${env.NEXTCLOUD_AGENT_URL}${path}`
 
   let res: Response
   try {
-    res = await fetch(url, { method, headers, body: requestBody })
+    res = await fetch(url, {
+      method,
+      headers: {
+        Authorization: `Bearer ${env.NEXTCLOUD_AGENT_TOKEN}`,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    })
   } catch {
-    // Network failure (Nextcloud unreachable, DNS, timeout, TLS, ...).
-    // Never include the URL/credentials in what bubbles up.
-    throw new NextcloudApiError('Could not reach the Nextcloud server')
+    // Network failure — agent unreachable, DNS, firewall, timeout, etc.
+    throw new NextcloudApiError('Could not reach the Nextcloud provisioning agent')
   }
 
-  let json: OcsEnvelope<T> | undefined
-  try {
-    json = (await res.json()) as OcsEnvelope<T>
-  } catch {
-    // Fall through — some OCS error responses aren't JSON.
+  if (!res.ok) {
+    let message = `Nextcloud agent request failed (HTTP ${res.status})`
+    try {
+      const errBody = (await res.json()) as { error?: string }
+      if (errBody?.error) message = errBody.error
+    } catch {
+      // Response wasn't JSON — fall back to the generic message above.
+    }
+    throw new NextcloudApiError(message, res.status)
   }
 
-  const ocsStatusCode = json?.ocs?.meta?.statuscode
-  const ocsMessage = json?.ocs?.meta?.message
-
-  if (!res.ok || (ocsStatusCode && ocsStatusCode >= 300)) {
-    // Only the OCS-provided message is surfaced — never headers, never
-    // the request body (which may have contained a password).
-    throw new NextcloudApiError(
-      ocsMessage || `Nextcloud request failed (HTTP ${res.status})`,
-      ocsStatusCode ?? res.status
-    )
-  }
-
-  return json!.ocs.data
+  if (res.status === 204) return undefined as T
+  return (await res.json()) as T
 }
 
 export const nextcloudService = {
@@ -119,33 +82,26 @@ export const nextcloudService = {
    * leave the account on Nextcloud's server-wide default quota.
    */
   async createUser(userid: string, password: string, quotaGb?: number): Promise<void> {
-    await ocsRequest<{ id: string }>('POST', '/cloud/users', {
-      userid,
-      password,
-      ...(quotaGb !== undefined ? { quota: gbToQuotaString(quotaGb) } : {}),
-    })
+    await agentRequest<{ success: true }>('POST', '/internal/users', { userid, password, quotaGb })
   },
 
   async deleteUser(userid: string): Promise<void> {
-    await ocsRequest<void>('DELETE', `/cloud/users/${encodeURIComponent(userid)}`)
+    await agentRequest<{ success: true }>('DELETE', `/internal/users/${encodeURIComponent(userid)}`)
   },
 
   async changePassword(userid: string, newPassword: string): Promise<void> {
-    await ocsRequest<void>('PUT', `/cloud/users/${encodeURIComponent(userid)}`, {
-      key: 'password',
-      value: newPassword,
+    await agentRequest<{ success: true }>('PUT', `/internal/users/${encodeURIComponent(userid)}/password`, {
+      password: newPassword,
     })
   },
 
   async setQuota(userid: string, quotaGb: number): Promise<void> {
-    await ocsRequest<void>('PUT', `/cloud/users/${encodeURIComponent(userid)}`, {
-      key: 'quota',
-      value: gbToQuotaString(quotaGb),
+    await agentRequest<{ success: true }>('PUT', `/internal/users/${encodeURIComponent(userid)}/quota`, {
+      quotaGb,
     })
   },
 
   async getQuota(userid: string): Promise<NextcloudQuota> {
-    const data = await ocsRequest<NextcloudUserDetails>('GET', `/cloud/users/${encodeURIComponent(userid)}`)
-    return data.quota
+    return agentRequest<NextcloudQuota>('GET', `/internal/users/${encodeURIComponent(userid)}/quota`)
   },
 }

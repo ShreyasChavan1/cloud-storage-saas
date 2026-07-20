@@ -16,15 +16,18 @@ const envSchema = z.object({
 
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
 
-  // Nextcloud OCS Provisioning API — used server-side only, never exposed
-  // to the client. Use an app password (Settings > Security > Devices &
-  // sessions), not the admin account's actual login password.
-  NEXTCLOUD_URL: z
+  // Nextcloud is provisioned via a small standalone agent (see
+  // ../nextcloud-agent) that runs ON the Nextcloud server and exposes five
+  // operations over HTTP, authenticated by a shared token — NOT the OCS
+  // Provisioning HTTP API directly (it has a currently open Nextcloud bug,
+  // server#51637, rejecting sensitive requests even with a valid app
+  // password — see NextcloudService.ts), and NOT SSH from this machine
+  // (no private key needs to live here).
+  NEXTCLOUD_AGENT_URL: z
     .string()
-    .url('NEXTCLOUD_URL must be a full URL, e.g. https://cloud.example.com')
-    .transform((url) => url.replace(/\/+$/, '')), // strip trailing slash(es)
-  NEXTCLOUD_ADMIN_USER: z.string().min(1, 'NEXTCLOUD_ADMIN_USER is required'),
-  NEXTCLOUD_ADMIN_PASSWORD: z.string().min(1, 'NEXTCLOUD_ADMIN_PASSWORD is required'),
+    .url('NEXTCLOUD_AGENT_URL must be a full URL, e.g. http://141.148.216.121:4100')
+    .transform((url) => url.replace(/\/+$/, '')),
+  NEXTCLOUD_AGENT_TOKEN: z.string().min(16, 'NEXTCLOUD_AGENT_TOKEN must be at least 16 characters'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
