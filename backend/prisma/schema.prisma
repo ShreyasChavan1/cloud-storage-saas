@@ -82,6 +82,13 @@ model Subscription {
 
   renewalDate DateTime @map("renewal_date")
 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Every payment that created or renewed this subscription — kept even if
+  // a payment's own subscriptionId later goes null (see Payment.subscription).
+  payments Payment[]
+
   @@index([userId])
   @@map("subscriptions")
 }
@@ -96,7 +103,25 @@ model Payment {
   // shouldn't require a schema migration to add.
   provider String
 
+  // The subscription this payment created or renewed. Optional: a payment
+  // can exist (e.g. a failed/pending charge) before any subscription is
+  // created from it, and SetNull rather than Cascade on delete means a
+  // payment record survives even if its subscription is later removed —
+  // billing history should outlive the subscription row it's tied to.
+  subscriptionId String?       @map("subscription_id")
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  // The payment gateway's own identifier for this charge — Razorpay
+  // Payment ID, Stripe PaymentIntent ID, PayPal Transaction ID, etc.
+  // Nullable because it isn't known until the gateway responds, and free
+  // text for the same reason `provider` is: format varies per gateway.
+  providerPaymentId String? @map("provider_payment_id")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
   @@index([userId])
+  @@index([subscriptionId])
   @@map("payments")
 }
 
