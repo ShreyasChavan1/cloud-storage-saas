@@ -39,4 +39,8 @@ export class ApiError extends Error {
   static serviceUnavailable(message = 'Service temporarily unavailable') {
     return new ApiError(503, message)
   }
+
+  static insufficientStorage(message = 'Storage quota exceeded') {
+    return new ApiError(507, message)
+  }
 }

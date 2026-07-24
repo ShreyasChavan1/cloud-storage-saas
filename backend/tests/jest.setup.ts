@@ -14,3 +14,7 @@ process.env.JWT_ACCESS_SECRET ??= 'test-access-secret-not-for-real-use'
 process.env.JWT_REFRESH_SECRET ??= 'test-refresh-secret-not-for-real-use'
 process.env.NEXTCLOUD_AGENT_URL ??= 'http://127.0.0.1:4100'
 process.env.NEXTCLOUD_AGENT_TOKEN ??= 'test-agent-token-not-for-real-use'
+process.env.NEXTCLOUD_URL ??= 'http://127.0.0.1:8080'
+// A fixed (not random) 64-hex-char test key — deliberately not secret,
+// never use this outside tests.
+process.env.CREDENTIAL_ENCRYPTION_KEY ??= 'a'.repeat(64)

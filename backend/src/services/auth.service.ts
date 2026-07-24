@@ -8,6 +8,7 @@ import { toAuthUserDTO } from '../models/user.model'
 import { hashPassword, comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
 import { generateRandomToken } from '../utils/token'
+import { encrypt } from '../utils/encryption'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
 import { DEFAULT_PLAN_NAME } from '../config/plans'
@@ -58,8 +59,10 @@ export const authService = {
     // user's plan. If this fails, roll back the Postgres user rather than
     // leaving an account with no storage backend behind it.
     const nextcloudUsername = user.id
+    let webdavPassword: string
     try {
-      await nextcloudService.createUser(nextcloudUsername, input.password, defaultPlan.storageLimit)
+      const result = await nextcloudService.createUser(nextcloudUsername, input.password, defaultPlan.storageLimit)
+      webdavPassword = result.webdavPassword
     } catch (err) {
       await userRepository.delete(user.id)
       const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
@@ -67,8 +70,13 @@ export const authService = {
       throw ApiError.serviceUnavailable('Could not set up your storage account. Please try again.')
     }
 
-    // 3. Store the nextcloud_username now that provisioning succeeded.
-    const provisionedUser = await userRepository.update(user.id, { nextcloudUsername })
+    // 3. Store the nextcloud_username and the encrypted WebDAV app password
+    // now that provisioning succeeded. The plaintext webdavPassword never
+    // touches the database or a log line — only encrypt()'s output does.
+    const provisionedUser = await userRepository.update(user.id, {
+      nextcloudUsername,
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
 
     // 4. Return JWT.
     const { accessToken, refreshToken } = await issueTokenPair(provisionedUser.id, provisionedUser.email)

@@ -8,7 +8,7 @@ changing any component shape (`AuthUserDTO` matches the frontend's `AuthUser`
 interface exactly).
 
 ## Stack
-Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino
+Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads)
 
 ## Folder structure
 ```
@@ -57,6 +57,15 @@ docker run --name nimbus-db -e POSTGRES_USER=nimbus -e POSTGRES_PASSWORD=nimbus 
 | POST | `/api/auth/refresh-token` | refresh cookie | Rotates the session, returns a new access token |
 | GET  | `/api/users/me`      | Bearer access token | Current user profile |
 | PATCH| `/api/users/me`      | Bearer access token | Update name (avatar initials are derived, not stored) |
+| GET  | `/api/files`         | Bearer access token | List a directory (`?path=`, defaults to root) |
+| POST | `/api/files/upload`  | Bearer access token | Upload a file (`multipart/form-data`, field `file`; `?path=` target folder) |
+| DELETE | `/api/files`       | Bearer access token | Delete a file or folder (`?path=`) |
+| PATCH| `/api/files/rename`  | Bearer access token | Rename (`{ path, newName }`) |
+| POST | `/api/files/folder`  | Bearer access token | Create a folder (`{ path?, name }`) |
+| POST | `/api/files/move`    | Bearer access token | Move (`{ from, to }`) |
+| POST | `/api/files/copy`    | Bearer access token | Copy (`{ from, to }`) |
+| GET  | `/api/files/quota`   | Bearer access token | Current user's live storage usage |
+| GET  | `/api/files/download`| Bearer access token | Download a file (`?path=`), streamed |
 | GET  | `/api/health`        | – | Liveness check |
 
 All responses use the envelope `{ success, data }` or `{ success: false, error: { message, details } }`.
@@ -148,6 +157,60 @@ agent can only report the *configured* quota via `occ` (e.g. `"5 GB"`) —
 `occ` has no clean equivalent of the OCS API's live usage stats (free/used/
 total/relative). `NextcloudQuota` reflects this honestly rather than faking
 numbers.
+
+## File API (Phase 6)
+`/api/files/*` proxies file operations to Nextcloud over **WebDAV** —
+the frontend never talks to WebDAV, or to Nextcloud, directly at all. Every
+request goes: frontend → this backend → WebDAV (as that specific user) →
+Nextcloud.
+
+**Why not admin-impersonation, the way `occ` works for account
+provisioning:** Nextcloud has no equivalent for WebDAV — confirmed via its
+own docs and an open, unresolved feature request for exactly this
+capability. WebDAV paths are scoped to whoever authenticates, full stop.
+
+**So each user gets their own dedicated credential.** At registration,
+right after `nextcloud-agent` creates the account (see Phase 5), it also
+runs `occ user:auth-tokens:add` to mint a separate, individually-revocable
+app password — NOT the account's login password — specifically for this
+backend's file access. That password is encrypted (AES-256-GCM, see
+`utils/encryption.ts`) and stored on the `User` row
+(`nextcloudWebdavPasswordEncrypted`). Every file request decrypts it,
+authenticates to WebDAV as that one user, and nothing else ever holds an
+admin-level credential capable of reading anyone's files.
+
+**Path-traversal is the single most important thing to get right here.**
+Every path argument across all 9 routes goes through
+`utils/davPath.ts::sanitizeDavPath()` before reaching WebDAV — it's covered
+by its own dedicated, thorough test suite
+(`tests/davPath.test.ts`) precisely because a mistake here would mean one
+user's `path=../other-user-folder` reaching outside their own space. In
+practice this can't happen even in principle, not just by convention: each
+WebDAV client is constructed with that user's own root
+(`/remote.php/dav/files/<their-uuid>/`) already baked into its base URL, so
+even a full path-traversal payload can only ever resolve to somewhere
+inside their own tree — never another user's.
+
+**Uploads** are buffered in memory via Multer (100MB cap) — simplest
+correct option for now; worth revisiting (disk-temp storage, or a
+streaming multipart parser) if this ever needs to handle much larger files.
+
+**Downloads stream** — the backend never buffers a whole file before
+sending it to the client; `WebDavService.downloadStream()` returns a live
+Node stream piped directly into the HTTP response.
+
+**A worthwhile side effect:** Phase 5's agent-based `nextcloudService.getQuota()`
+could only report the *configured* quota ceiling (`occ` has no live-usage
+equivalent). `GET /api/files/quota` doesn't have that limitation — WebDAV's
+own quota properties give real used/available byte counts, now that
+per-user credentials exist to ask for them.
+
+**The `webdav` client library is pure ESM** (no CommonJS build at all) —
+this backend compiles to CommonJS, so `WebDavService.ts` loads it via a
+cached dynamic `import()` rather than a static import, which is the
+standard, correct interop mechanism for this. A static import would have
+compiled fine but crashed at actual runtime (`ERR_REQUIRE_ESM`) — worth
+knowing if this file ever gets refactored.
 
 ## Not included in this phase
 File/folder storage, uploads, sharing, and any Nextcloud/WebDAV integration

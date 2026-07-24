@@ -29,6 +29,27 @@ const envSchema = z.object({
     .transform((url) => url.replace(/\/+$/, '')),
   NEXTCLOUD_AGENT_TOKEN: z.string().min(16, 'NEXTCLOUD_AGENT_TOKEN must be at least 16 characters'),
 
+  // WebDAV base URL — NOT a secret (it's the same host:port used to reach
+  // Nextcloud's own web UI), used directly by this backend for file
+  // operations. Every WebDAV request authenticates as the specific target
+  // user via their own encrypted app password (see
+  // nextcloudWebdavPasswordEncrypted on User) — this backend never holds
+  // an admin-level Nextcloud credential for file access, only the agent's
+  // scoped bearer token for account lifecycle operations.
+  NEXTCLOUD_URL: z
+    .string()
+    .url('NEXTCLOUD_URL must be a full URL, e.g. http://141.148.216.121:8080')
+    .transform((url) => url.replace(/\/+$/, '')),
+
+  // 32 bytes, hex-encoded (64 hex chars) — AES-256-GCM key used to encrypt
+  // nextcloudWebdavPasswordEncrypted at rest. Generate with:
+  //   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+  // Losing/rotating this key without a migration plan orphans every
+  // stored WebDAV credential — back it up like any other production secret.
+  CREDENTIAL_ENCRYPTION_KEY: z
+    .string()
+    .regex(/^[0-9a-fA-F]{64}$/, 'CREDENTIAL_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)'),
+
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 })
 

@@ -47,6 +47,17 @@ model User {
   // Reserved for a future phase — not wired to Nextcloud yet.
   nextcloudUsername String? @map("nextcloud_username")
 
+  // AES-256-GCM ciphertext of a dedicated Nextcloud app password minted
+  // specifically for WebDAV file access (see NextcloudService.createUser
+  // and nextcloud-agent's user:auth-tokens:add step) — NOT this user's
+  // actual login password, and NOT the same value as passwordHash above
+  // (which is one-way bcrypt and can never be used to authenticate
+  // against anything). This one is reversible by design: the backend
+  // needs the plaintext back to make WebDAV requests on the user's
+  // behalf. Encrypted at rest with CREDENTIAL_ENCRYPTION_KEY — see
+  // utils/encryption.ts.
+  nextcloudWebdavPasswordEncrypted String? @map("nextcloud_webdav_password_encrypted")
+
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 

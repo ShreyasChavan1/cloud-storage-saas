@@ -81,8 +81,23 @@ export const nextcloudService = {
    * Provisions a Nextcloud account. `quotaGb` is optional — omit it to
    * leave the account on Nextcloud's server-wide default quota.
    */
-  async createUser(userid: string, password: string, quotaGb?: number): Promise<void> {
-    await agentRequest<{ success: true }>('POST', '/internal/users', { userid, password, quotaGb })
+  /**
+   * Provisions a Nextcloud account. `quotaGb` is optional — omit it to
+   * leave the account on Nextcloud's server-wide default quota.
+   *
+   * Returns a dedicated app password minted specifically for this account
+   * — NOT its login password — for the caller to encrypt and store for
+   * later WebDAV file access (see auth.service.ts's register()). Nextcloud
+   * has no admin-impersonation for WebDAV, so this per-user credential is
+   * the only way the backend can act on a specific user's files at all.
+   */
+  async createUser(userid: string, password: string, quotaGb?: number): Promise<{ webdavPassword: string }> {
+    const result = await agentRequest<{ success: true; webdavPassword: string }>('POST', '/internal/users', {
+      userid,
+      password,
+      quotaGb,
+    })
+    return { webdavPassword: result.webdavPassword }
   },
 
   async deleteUser(userid: string): Promise<void> {

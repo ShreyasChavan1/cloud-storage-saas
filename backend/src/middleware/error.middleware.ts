@@ -1,5 +1,6 @@
 import { NextFunction, Request, Response } from 'express'
 import { Prisma } from '@prisma/client'
+import multer from 'multer'
 import { ApiError } from '../utils/ApiError'
 import { sendError } from '../utils/response'
 import { logger } from '../config/logger'
@@ -13,6 +14,11 @@ export function errorMiddleware(err: unknown, req: Request, res: Response, _next
       logger.error({ err, reqId: req.id }, 'Non-operational error')
     }
     return sendError(res, err.statusCode, err.message, err.details)
+  }
+
+  if (err instanceof multer.MulterError) {
+    const statusCode = err.code === 'LIMIT_FILE_SIZE' ? 413 : 400
+    return sendError(res, statusCode, err.message)
   }
 
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
