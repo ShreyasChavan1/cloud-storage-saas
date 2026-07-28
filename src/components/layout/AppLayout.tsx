@@ -5,7 +5,6 @@ import { Navbar } from './Navbar'
 
 export function AppLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
-
   return (
     <div className="flex min-h-screen bg-surface-50 dark:bg-dark-bg">
       <Sidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />

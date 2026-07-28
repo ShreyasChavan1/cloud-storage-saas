@@ -1,24 +1,32 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Folder, Share2, Trash2, Star, Settings, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ProgressBar } from '@/components/ui/ProgressBar'
-import { storage } from '@/data/dummyData'
+import { useQuota } from '@/hooks/useQuota'
+import { formatBytes } from '@/lib/formatBytes'
 import { cn } from '@/lib/cn'
 
+// "Shared" was dropped from this list — there's no sharing endpoint in the
+// backend at all yet (Nextcloud's OCS Share API was never wired up), so a
+// nav item pointing at it would just be a dead end. Favorites/Trash stay,
+// since Files.tsx shows an honest "not available yet" state for those
+// rather than hiding the entry points entirely.
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/files', label: 'Files', icon: Folder },
-  { to: '/files?view=shared', label: 'Shared', icon: Share2 },
   { to: '/files?view=favorites', label: 'Favorites', icon: Star },
   { to: '/files?view=trash', label: 'Trash', icon: Trash2 },
 ]
 
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
+  const { data: quota } = useQuota()
+  const usedBytes = quota?.used ?? 0
+  const hasKnownLimit = typeof quota?.available === 'number'
+  const totalBytes = hasKnownLimit ? usedBytes + (quota!.available as number) : undefined
+
   return (
     <>
-      {mobileOpen && (
-        <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={onClose} />
-      )}
+      {mobileOpen && <div className="fixed inset-0 z-30 bg-black/30 lg:hidden" onClick={onClose} />}
       <aside
         className={cn(
           'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-surface-0 px-4 py-6 transition-transform duration-200 dark:border-dark-border dark:bg-dark-surface lg:static lg:translate-x-0',
@@ -73,10 +81,11 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           <div className="flex items-center justify-between text-xs font-medium text-ink-500 dark:text-ink-400">
             <span>Storage</span>
             <span>
-              {storage.usedGB}GB / {storage.totalGB}GB
+              {formatBytes(usedBytes)}
+              {totalBytes !== undefined && ` / ${formatBytes(totalBytes)}`}
             </span>
           </div>
-          <ProgressBar value={storage.usedGB} max={storage.totalGB} className="mt-2" />
+          <ProgressBar value={usedBytes} max={totalBytes ?? Math.max(usedBytes, 1)} className="mt-2" />
           <NavLink
             to="/pricing"
             className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-brand-500 py-2 text-xs font-semibold text-white hover:bg-brand-600"

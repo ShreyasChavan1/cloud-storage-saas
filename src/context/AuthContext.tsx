@@ -1,12 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
-import { api, setAccessToken } from '../lib/api'
-
-interface AuthUser {
-  name: string
-  email: string
-  avatarInitials: string
-  plan: string
-}
+import { setAccessToken } from '@/lib/api'
+import { authApi, AuthUser } from '@/api/auth'
 
 interface AuthContextValue {
   user: AuthUser | null
@@ -15,6 +9,9 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>
   register: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
+  // Lets other parts of the app (e.g. after a profile update) update the
+  // user AuthContext holds without a full re-login.
+  setUser: (user: AuthUser) => void
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
@@ -26,36 +23,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // On first load, there's no access token in memory yet (page refresh wipes
   // it), so try a silent refresh using the httpOnly cookie to restore the session.
   useEffect(() => {
-    api
-      .post('/auth/refresh-token')
-      .then(({ data }) => {
-        setAccessToken(data.data.accessToken)
-        setUser(data.data.user)
+    authApi
+      .refreshToken()
+      .then(({ accessToken, user }) => {
+        setAccessToken(accessToken)
+        setUser(user)
       })
       .catch(() => setAccessToken(null))
       .finally(() => setLoading(false))
   }, [])
 
   const login = async (email: string, password: string) => {
-    const { data } = await api.post('/auth/login', { email, password })
-    setAccessToken(data.data.accessToken)
-    setUser(data.data.user)
+    const { accessToken, user } = await authApi.login(email, password)
+    setAccessToken(accessToken)
+    setUser(user)
   }
 
   const register = async (name: string, email: string, password: string) => {
-    const { data } = await api.post('/auth/register', { name, email, password })
-    setAccessToken(data.data.accessToken)
-    setUser(data.data.user)
+    const { accessToken, user } = await authApi.register(name, email, password)
+    setAccessToken(accessToken)
+    setUser(user)
   }
 
   const logout = async () => {
-    await api.post('/auth/logout')
+    await authApi.logout()
     setAccessToken(null)
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, loading, login, register, logout, setUser }}>
       {children}
     </AuthContext.Provider>
   )

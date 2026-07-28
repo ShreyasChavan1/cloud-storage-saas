@@ -12,12 +12,8 @@ export default function NotFound() {
       </div>
       <h1 className="mt-6 font-display text-6xl font-bold text-ink-900 dark:text-white">404</h1>
       <p className="mt-2 text-lg font-medium text-ink-700 dark:text-ink-300">This file doesn't exist</p>
-      <p className="mt-1 max-w-sm text-sm text-ink-500 dark:text-ink-400">
-        The page you're looking for may have been moved, renamed, or deleted.
-      </p>
-      <Link to="/dashboard" className="mt-6">
-        <Button>Back to dashboard</Button>
-      </Link>
+      <p className="mt-1 max-w-sm text-sm text-ink-500 dark:text-ink-400">The page you're looking for may have been moved, renamed, or deleted.</p>
+      <Link to="/dashboard" className="mt-6"><Button>Back to dashboard</Button></Link>
     </div>
   )
 }

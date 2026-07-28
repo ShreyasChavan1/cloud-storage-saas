@@ -10,74 +10,47 @@ import { AxiosError } from 'axios'
 export default function Login() {
   const { login } = useAuth()
   const navigate = useNavigate()
-  const [email, setEmail] = useState('asha@example.com')
+  const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e: FormEvent) => {
-  e.preventDefault()
-  if (!email || !password) {
-    setError('Enter your email and password to continue.')
-    return
+    e.preventDefault()
+    if (!email || !password) {
+      setError('Enter your email and password to continue.')
+      return
+    }
+    setError('')
+    setLoading(true)
+    try {
+      await login(email, password)
+      navigate('/dashboard')
+    } catch (err) {
+      const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
+      setError(message ?? 'Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
+    }
   }
-  setError('')
-  setLoading(true)
-  try {
-    await login(email, password)
-    navigate('/dashboard')
-  } catch (err) {
-    const message =
-      err instanceof AxiosError
-        ? err.response?.data?.error?.message
-        : undefined
-    setError(message ?? 'Something went wrong. Please try again.')
-  } finally {
-    setLoading(false)
-  }
-}
 
   return (
     <AuthLayout title="Welcome back" subtitle="Log in to keep working on your files.">
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
-        <Input
-          label="Email"
-          type="email"
-          placeholder="you@example.com"
-          icon={<Mail className="h-4 w-4" />}
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
-        <Input
-          label="Password"
-          type="password"
-          placeholder="Enter your password"
-          icon={<Lock className="h-4 w-4" />}
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          error={error}
-        />
-
+        <Input label="Email" type="email" placeholder="you@example.com" icon={<Mail className="h-4 w-4" />} value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Input label="Password" type="password" placeholder="Enter your password" icon={<Lock className="h-4 w-4" />} value={password} onChange={(e) => setPassword(e.target.value)} error={error} />
         <div className="flex items-center justify-between">
           <label className="flex items-center gap-2 text-sm text-ink-500 dark:text-ink-400">
             <input type="checkbox" className="h-4 w-4 rounded border-line text-brand-500 focus:ring-brand-500" />
             Remember me
           </label>
-          <Link to="/forgot-password" className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
-            Forgot password?
-          </Link>
+          <Link to="/forgot-password" className="text-sm font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">Forgot password?</Link>
         </div>
-
-        <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">
-          Log in
-        </Button>
+        <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">Log in</Button>
       </form>
-
       <p className="mt-6 text-center text-sm text-ink-500 dark:text-ink-400">
         Don't have an account?{' '}
-        <Link to="/register" className="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">
-          Sign up for free
-        </Link>
+        <Link to="/register" className="font-medium text-brand-600 hover:text-brand-700 dark:text-brand-400">Sign up for free</Link>
       </p>
     </AuthLayout>
   )

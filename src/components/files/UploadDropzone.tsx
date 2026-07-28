@@ -1,10 +1,28 @@
-import { useRef, useState } from 'react'
+import { useRef, useState, DragEvent, ChangeEvent } from 'react'
 import { UploadCloud, FileUp } from 'lucide-react'
 import { cn } from '@/lib/cn'
 
-export function UploadDropzone({ compact }: { compact?: boolean }) {
+interface UploadDropzoneProps {
+  compact?: boolean
+  onFilesSelected: (files: File[]) => void
+}
+
+export function UploadDropzone({ compact, onFilesSelected }: UploadDropzoneProps) {
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const handleDrop = (e: DragEvent<HTMLDivElement>) => {
+    e.preventDefault()
+    setDragging(false)
+    const files = Array.from(e.dataTransfer.files)
+    if (files.length) onFilesSelected(files)
+  }
+
+  const handleInputChange = (e: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) onFilesSelected(files)
+    e.target.value = '' // allow re-selecting the same file later
+  }
 
   return (
     <div
@@ -13,11 +31,7 @@ export function UploadDropzone({ compact }: { compact?: boolean }) {
         setDragging(true)
       }}
       onDragLeave={() => setDragging(false)}
-      onDrop={(e) => {
-        e.preventDefault()
-        setDragging(false)
-        // Phase 1 is UI-only — dropped files are not uploaded anywhere yet.
-      }}
+      onDrop={handleDrop}
       onClick={() => inputRef.current?.click()}
       className={cn(
         'flex cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed transition-colors',
@@ -27,7 +41,7 @@ export function UploadDropzone({ compact }: { compact?: boolean }) {
           : 'border-line bg-surface-50 hover:border-brand-300 hover:bg-brand-50/40 dark:border-dark-border dark:bg-dark-surface2 dark:hover:border-brand-700'
       )}
     >
-      <input ref={inputRef} type="file" multiple className="hidden" />
+      <input ref={inputRef} type="file" multiple className="hidden" onChange={handleInputChange} />
       <div
         className={cn(
           'flex items-center justify-center rounded-full transition-colors',

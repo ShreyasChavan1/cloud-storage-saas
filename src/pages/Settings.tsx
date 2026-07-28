@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { User, Lock, Palette, CreditCard, Bell } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -6,6 +6,9 @@ import { Button } from '@/components/ui/Button'
 import { Avatar } from '@/components/ui/Avatar'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { useAuth } from '@/context/AuthContext'
+import { useProfile, useUpdateProfile } from '@/hooks/useProfile'
+import { useToast } from '@/context/ToastContext'
+import { getErrorMessage } from '@/lib/getErrorMessage'
 import { cn } from '@/lib/cn'
 
 const tabs = [
@@ -18,9 +21,23 @@ const tabs = [
 
 export default function Settings() {
   const { user } = useAuth()
+  const { showToast } = useToast()
   const [active, setActive] = useState('profile')
-  const [name, setName] = useState(user?.name ?? '')
-  const [email, setEmail] = useState(user?.email ?? '')
+
+  const { data: profile, isLoading: profileLoading } = useProfile()
+  const updateProfile = useUpdateProfile()
+
+  const [name, setName] = useState('')
+  useEffect(() => {
+    if (profile) setName(profile.name)
+  }, [profile])
+
+  const handleSaveProfile = () => {
+    updateProfile.mutate(name, {
+      onSuccess: () => showToast('Profile updated.'),
+      onError: (err) => showToast(getErrorMessage(err, 'Could not update profile.'), 'error'),
+    })
+  }
 
   return (
     <div className="mx-auto max-w-5xl animate-fade-up">
@@ -53,34 +70,49 @@ export default function Settings() {
               <div className="mt-5 flex items-center gap-4">
                 <Avatar initials={user?.avatarInitials ?? 'NB'} className="h-16 w-16 text-lg" />
                 <div>
-                  <Button variant="secondary" size="sm">Change photo</Button>
-                  <p className="mt-1.5 text-xs text-ink-400">JPG or PNG, up to 2MB.</p>
+                  <Button variant="secondary" size="sm" disabled>
+                    Change photo
+                  </Button>
+                  <p className="mt-1.5 text-xs text-ink-400">Avatar photos aren't supported yet — initials only.</p>
                 </div>
               </div>
-              <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
-                <Input label="Email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <Button className="mt-6">Save changes</Button>
+              {profileLoading ? (
+                <div className="mt-6 h-20 animate-pulse rounded-xl bg-surface-100 dark:bg-dark-surface2" />
+              ) : (
+                <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
+                  <Input label="Full name" value={name} onChange={(e) => setName(e.target.value)} />
+                  <Input label="Email" type="email" value={profile?.email ?? ''} disabled title="Email changes aren't supported yet" />
+                </div>
+              )}
+              <Button className="mt-6" loading={updateProfile.isPending} onClick={handleSaveProfile}>
+                Save changes
+              </Button>
             </Card>
           )}
 
           {active === 'security' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">Security</h2>
-              <div className="mt-5 flex flex-col gap-4 max-w-sm">
-                <Input label="Current password" type="password" placeholder="••••••••" />
-                <Input label="New password" type="password" placeholder="At least 8 characters" />
-                <Input label="Confirm new password" type="password" placeholder="Repeat new password" />
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
+                Changing your password from here isn't available yet — use "Forgot password" from the login screen in the meantime.
+              </p>
+              <div className="mt-5 flex flex-col gap-4 max-w-sm opacity-50">
+                <Input label="Current password" type="password" placeholder="••••••••" disabled />
+                <Input label="New password" type="password" placeholder="At least 8 characters" disabled />
+                <Input label="Confirm new password" type="password" placeholder="Repeat new password" disabled />
               </div>
-              <Button className="mt-6">Update password</Button>
+              <Button className="mt-6" disabled>
+                Update password
+              </Button>
 
               <div className="mt-8 flex items-center justify-between border-t border-line pt-6 dark:border-dark-border">
                 <div>
                   <p className="font-medium text-ink-900 dark:text-white">Two-factor authentication</p>
-                  <p className="text-sm text-ink-500 dark:text-ink-400">Add an extra layer of security to your account.</p>
+                  <p className="text-sm text-ink-500 dark:text-ink-400">Not available yet.</p>
                 </div>
-                <Button variant="secondary" size="sm">Enable</Button>
+                <Button variant="secondary" size="sm" disabled>
+                  Enable
+                </Button>
               </div>
             </Card>
           )}
@@ -103,25 +135,26 @@ export default function Settings() {
               <h2 className="text-lg font-semibold">Billing</h2>
               <div className="mt-5 flex items-center justify-between rounded-xl bg-brand-50 p-4 dark:bg-brand-900/20">
                 <div>
-                  <p className="font-medium text-brand-700 dark:text-brand-300">Pro plan</p>
-                  <p className="text-sm text-ink-500 dark:text-ink-400">$12/mo · 100GB storage · Renews Aug 8, 2026</p>
+                  <p className="font-medium text-brand-700 dark:text-brand-300">{user?.plan ?? 'Free'} plan</p>
+                  <p className="text-sm text-ink-500 dark:text-ink-400">Your current plan.</p>
                 </div>
-                <Button size="sm">Manage plan</Button>
+                <Button size="sm" disabled title="Plan changes aren't available yet">
+                  Manage plan
+                </Button>
               </div>
-              <p className="mt-4 text-sm text-ink-500 dark:text-ink-400">
-                Payment method: Visa ending in 4242.
-              </p>
+              <p className="mt-4 text-sm text-ink-500 dark:text-ink-400">Payment history and methods aren't available yet.</p>
             </Card>
           )}
 
           {active === 'notifications' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">Notifications</h2>
-              <div className="mt-5 flex flex-col divide-y divide-line dark:divide-dark-border">
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Notification preferences aren't available yet.</p>
+              <div className="mt-5 flex flex-col divide-y divide-line opacity-50 dark:divide-dark-border">
                 {['File shared with me', 'Comments on my files', 'Storage almost full', 'Product updates'].map((label) => (
                   <label key={label} className="flex items-center justify-between py-3">
                     <span className="text-sm text-ink-700 dark:text-ink-300">{label}</span>
-                    <input type="checkbox" defaultChecked className="h-4 w-4 rounded border-line text-brand-500 focus:ring-brand-500" />
+                    <input type="checkbox" disabled className="h-4 w-4 rounded border-line text-brand-500" />
                   </label>
                 ))}
               </div>
