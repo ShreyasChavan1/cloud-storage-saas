@@ -6,6 +6,7 @@ import App from './App'
 import { ThemeProvider } from './context/ThemeContext'
 import { AuthProvider } from './context/AuthContext'
 import { ToastProvider } from './context/ToastContext'
+import { UploadQueueProvider } from './context/UploadQueueContext'
 import './index.css'
 
 const queryClient = new QueryClient({
@@ -23,9 +24,11 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
       <QueryClientProvider client={queryClient}>
         <ThemeProvider>
           <ToastProvider>
-            <AuthProvider>
-              <App />
-            </AuthProvider>
+            <UploadQueueProvider>
+              <AuthProvider>
+                <App />
+              </AuthProvider>
+            </UploadQueueProvider>
           </ToastProvider>
         </ThemeProvider>
       </QueryClientProvider>

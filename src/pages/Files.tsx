@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
 import { useUploadFile, useCreateFolder } from '@/hooks/useFileMutations'
 import { useToast } from '@/context/ToastContext'
+import { useUploadQueue } from '@/context/UploadQueueContext'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { cn } from '@/lib/cn'
 
@@ -32,6 +33,7 @@ export default function Files() {
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
+  const { startUpload, updateProgress, finishUpload } = useUploadQueue()
 
   const view = searchParams.get('view') ?? 'all'
   const currentPath = searchParams.get('path') ?? undefined
@@ -65,11 +67,18 @@ export default function Files() {
 
   const handleFilesSelected = (files: File[]) => {
     files.forEach((file) => {
+      const uploadId = startUpload(file.name)
       uploadFile.mutate(
-        { file },
+        { file, onProgress: (percent) => updateProgress(uploadId, percent) },
         {
-          onSuccess: () => showToast(`Uploaded "${file.name}".`),
-          onError: (err) => showToast(getErrorMessage(err, `Failed to upload "${file.name}".`), 'error'),
+          onSuccess: () => {
+            finishUpload(uploadId, 'success')
+            showToast(`Uploaded "${file.name}".`)
+          },
+          onError: (err) => {
+            finishUpload(uploadId, 'error')
+            showToast(getErrorMessage(err, `Failed to upload "${file.name}".`), 'error')
+          },
         }
       )
     })
