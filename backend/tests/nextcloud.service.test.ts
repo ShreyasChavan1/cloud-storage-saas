@@ -39,6 +39,21 @@ describe('NextcloudService (agent HTTP client)', () => {
     })
   })
 
+  it('includes displayName/email in the request body when provided', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse(201, { success: true }))
+
+    await nextcloudService.createUser('abc-123', 'a-strong-password', 5, 'Asha Kapoor', 'asha@example.com')
+
+    const [, options] = fetchMock().mock.calls[0]
+    expect(JSON.parse(options.body)).toEqual({
+      userid: 'abc-123',
+      password: 'a-strong-password',
+      quotaGb: 5,
+      displayName: 'Asha Kapoor',
+      email: 'asha@example.com',
+    })
+  })
+
   it('deleteUser sends a DELETE to the encoded userid path', async () => {
     fetchMock().mockResolvedValueOnce(jsonResponse(200, { success: true }))
     await nextcloudService.deleteUser('abc-123')

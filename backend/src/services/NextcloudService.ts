@@ -91,11 +91,19 @@ export const nextcloudService = {
    * has no admin-impersonation for WebDAV, so this per-user credential is
    * the only way the backend can act on a specific user's files at all.
    */
-  async createUser(userid: string, password: string, quotaGb?: number): Promise<{ webdavPassword: string }> {
+  async createUser(
+    userid: string,
+    password: string,
+    quotaGb?: number,
+    displayName?: string,
+    email?: string
+  ): Promise<{ webdavPassword: string }> {
     const result = await agentRequest<{ success: true; webdavPassword: string }>('POST', '/internal/users', {
       userid,
       password,
       quotaGb,
+      displayName,
+      email,
     })
     return { webdavPassword: result.webdavPassword }
   },

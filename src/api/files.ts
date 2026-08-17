@@ -18,13 +18,23 @@ export const filesApi = {
   list: (path?: string) =>
     api.get<{ data: { entries: FileEntry[] } }>('/files', { params: { path } }).then((r) => r.data.data.entries),
 
-  upload: (path: string | undefined, file: File, onProgress?: (percent: number) => void) => {
+  upload: (
+    path: string | undefined,
+    file: File,
+    onProgress?: (percent: number) => void,
+    signal?: AbortSignal,
+    // Overrides the filename sent to the server — needed when a client-side
+    // rename (e.g. "keep both" on a duplicate) doesn't match the browser
+    // File object's own immutable `.name`.
+    fileName?: string
+  ) => {
     const formData = new FormData()
-    formData.append('file', file)
+    formData.append('file', file, fileName ?? file.name)
     return api
       .post<{ data: { entry: FileEntry } }>('/files/upload', formData, {
         params: { path },
         headers: { 'Content-Type': 'multipart/form-data' },
+        signal,
         onUploadProgress: (evt) => {
           if (onProgress && evt.total) onProgress(Math.round((evt.loaded / evt.total) * 100))
         },

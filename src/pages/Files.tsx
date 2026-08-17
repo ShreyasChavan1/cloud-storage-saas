@@ -7,9 +7,11 @@ import { UploadDropzone } from '@/components/files/UploadDropzone'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
-import { useUploadFile, useCreateFolder } from '@/hooks/useFileMutations'
+import { useCreateFolder } from '@/hooks/useFileMutations'
+import { useDropToMove } from '@/hooks/useDropToMove'
 import { useToast } from '@/context/ToastContext'
 import { useUploadQueue } from '@/context/UploadQueueContext'
+import { CollectedFile } from '@/lib/collectFileEntries'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { cn } from '@/lib/cn'
 
@@ -28,19 +30,47 @@ function breadcrumbSegments(path: string | undefined) {
   return path.split('/').filter(Boolean)
 }
 
+// Defined at module scope (not inside Files()) so each breadcrumb segment
+// keeps its own stable drag-over state across re-renders instead of being
+// torn down and recreated every render.
+function BreadcrumbButton({
+  label,
+  targetPath,
+  currentPath,
+  onClick,
+}: {
+  label: string
+  targetPath: string | undefined
+  currentPath: string | undefined
+  onClick: () => void
+}) {
+  const { isDragOver, dropHandlers } = useDropToMove(targetPath, currentPath)
+  return (
+    <button
+      onClick={onClick}
+      {...dropHandlers}
+      className={cn(
+        'truncate rounded-md px-1 transition-colors hover:text-brand-600 dark:hover:text-brand-400',
+        isDragOver && 'bg-brand-50 text-brand-700 ring-2 ring-brand-300 dark:bg-brand-900/30 dark:text-brand-300'
+      )}
+    >
+      {label}
+    </button>
+  )
+}
+
 export default function Files() {
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [creatingFolder, setCreatingFolder] = useState(false)
   const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
-  const { startUpload, updateProgress, finishUpload } = useUploadQueue()
+  const { enqueue } = useUploadQueue()
 
   const view = searchParams.get('view') ?? 'all'
   const currentPath = searchParams.get('path') ?? undefined
   const search = searchParams.get('search') ?? ''
 
   const { data: entries, isLoading, isError, refetch } = useFiles(view === 'all' ? currentPath : undefined)
-  const uploadFile = useUploadFile(currentPath)
   const createFolder = useCreateFolder(currentPath)
 
   const filteredEntries = useMemo(() => {
@@ -65,23 +95,8 @@ export default function Files() {
     openFolder(target)
   }
 
-  const handleFilesSelected = (files: File[]) => {
-    files.forEach((file) => {
-      const uploadId = startUpload(file.name)
-      uploadFile.mutate(
-        { file, onProgress: (percent) => updateProgress(uploadId, percent) },
-        {
-          onSuccess: () => {
-            finishUpload(uploadId, 'success')
-            showToast(`Uploaded "${file.name}".`)
-          },
-          onError: (err) => {
-            finishUpload(uploadId, 'error')
-            showToast(getErrorMessage(err, `Failed to upload "${file.name}".`), 'error')
-          },
-        }
-      )
-    })
+  const handleItemsSelected = (items: CollectedFile[]) => {
+    enqueue(items, currentPath)
   }
 
   const handleCreateFolder = (name: string) => {
@@ -114,15 +129,16 @@ export default function Files() {
     <div className="mx-auto max-w-7xl animate-fade-up">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-1 text-2xl font-bold">
-          <button onClick={() => openFolder('/')} className="hover:text-brand-600 dark:hover:text-brand-400">
-            All files
-          </button>
+          <BreadcrumbButton label="All files" targetPath={undefined} currentPath={currentPath} onClick={() => openFolder('/')} />
           {segments.map((segment, i) => (
             <span key={i} className="flex items-center gap-1">
               <ChevronRight className="h-5 w-5 shrink-0 text-ink-300" />
-              <button onClick={() => goToBreadcrumb(i)} className="truncate hover:text-brand-600 dark:hover:text-brand-400">
-                {segment}
-              </button>
+              <BreadcrumbButton
+                label={segment}
+                targetPath={'/' + segments.slice(0, i + 1).join('/')}
+                currentPath={currentPath}
+                onClick={() => goToBreadcrumb(i)}
+              />
             </span>
           ))}
         </div>
@@ -161,7 +177,7 @@ export default function Files() {
       )}
 
       <div className="mt-5">
-        <UploadDropzone onFilesSelected={handleFilesSelected} />
+        <UploadDropzone onItemsSelected={handleItemsSelected} />
       </div>
 
       <div className="mt-6">

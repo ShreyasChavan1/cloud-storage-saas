@@ -61,7 +61,13 @@ export const authService = {
     const nextcloudUsername = user.id
     let webdavPassword: string
     try {
-      const result = await nextcloudService.createUser(nextcloudUsername, input.password, defaultPlan.storageLimit)
+      const result = await nextcloudService.createUser(
+        nextcloudUsername,
+        input.password,
+        defaultPlan.storageLimit,
+        input.name,
+        input.email
+      )
       webdavPassword = result.webdavPassword
     } catch (err) {
       await userRepository.delete(user.id)
