@@ -14,6 +14,13 @@ export interface QuotaInfo {
   available: number | 'unlimited' | 'unknown'
 }
 
+export interface StorageStats {
+  totalFiles: number
+  totalFolders: number
+  largestFiles: FileEntry[]
+  recentUploads: FileEntry[]
+}
+
 export const filesApi = {
   list: (path?: string) =>
     api.get<{ data: { entries: FileEntry[] } }>('/files', { params: { path } }).then((r) => r.data.data.entries),
@@ -72,4 +79,6 @@ export const filesApi = {
     api.post<{ data: { entry: FileEntry } }>('/files/copy', { from, to }).then((r) => r.data.data.entry),
 
   quota: () => api.get<{ data: QuotaInfo }>('/files/quota').then((r) => r.data.data),
+
+  stats: () => api.get<{ data: StorageStats }>('/files/stats').then((r) => r.data.data),
 }

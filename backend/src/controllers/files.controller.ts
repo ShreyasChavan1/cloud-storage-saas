@@ -79,4 +79,9 @@ export const filesController = {
     const quota = await filesService.quota(req.user!.sub)
     return sendSuccess(res, quota)
   }),
+
+  stats: asyncHandler(async (req: Request, res: Response) => {
+    const stats = await filesService.stats(req.user!.sub)
+    return sendSuccess(res, stats)
+  }),
 }

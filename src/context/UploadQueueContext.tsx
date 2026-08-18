@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { AxiosError } from 'axios'
 import { filesApi, FileEntry } from '@/api/files'
 import { filesQueryKey } from '@/hooks/useFiles'
+import { storageStatsQueryKey } from '@/hooks/useStorageStats'
 import { CollectedFile, topLevelName, isFromFolder } from '@/lib/collectFileEntries'
 import { FileKind, kindFromName } from '@/lib/fileIcons'
 import { getErrorMessage } from '@/lib/getErrorMessage'
@@ -143,6 +144,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
     (path: string | undefined) => {
       queryClient.invalidateQueries({ queryKey: filesQueryKey(path) })
       queryClient.invalidateQueries({ queryKey: ['quota'] })
+      queryClient.invalidateQueries({ queryKey: storageStatsQueryKey })
     },
     [queryClient]
   )

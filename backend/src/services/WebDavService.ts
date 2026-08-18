@@ -70,6 +70,18 @@ export const webDavService = {
     })
   },
 
+  // Depth:infinity PROPFIND — everything under `path`, not just its direct
+  // children. Used for account-wide aggregates (largest files, total
+  // counts, recent uploads across all folders) where a single folder's
+  // listing isn't enough. One request handled server-side by Nextcloud,
+  // not N sequential ones from here.
+  listRecursive(nextcloudUsername: string, davPassword: string, path: string): Promise<FileStat[]> {
+    return run(async () => {
+      const client = await clientFor(nextcloudUsername, davPassword)
+      return client.getDirectoryContents(path, { deep: true }) as Promise<FileStat[]>
+    })
+  },
+
   stat(nextcloudUsername: string, davPassword: string, path: string): Promise<FileStat> {
     return run(async () => {
       const client = await clientFor(nextcloudUsername, davPassword)

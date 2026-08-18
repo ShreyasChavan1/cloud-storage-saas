@@ -2,6 +2,8 @@ import { useRef, useState, DragEvent, ChangeEvent, InputHTMLAttributes } from 'r
 import { UploadCloud, FileUp, FolderUp } from 'lucide-react'
 import { cn } from '@/lib/cn'
 import { collectFromDataTransfer, collectFromFileList, CollectedFile } from '@/lib/collectFileEntries'
+import { useToast } from '@/context/ToastContext'
+import { getErrorMessage } from '@/lib/getErrorMessage'
 
 // webkitdirectory/directory aren't in React's InputHTMLAttributes typings
 // (they're a long-standing non-standard extension every major browser
@@ -21,6 +23,7 @@ export function UploadDropzone({ compact, onItemsSelected }: UploadDropzoneProps
   const [processingDrop, setProcessingDrop] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
+  const { showToast } = useToast()
 
   const handleDrop = async (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault()
@@ -29,7 +32,18 @@ export function UploadDropzone({ compact, onItemsSelected }: UploadDropzoneProps
     setProcessingDrop(true)
     try {
       const items = await collectFromDataTransfer(e.dataTransfer)
-      if (items.length) onItemsSelected(items)
+      if (items.length === 0) {
+        showToast("Couldn't read anything from that drop — try the folder picker instead.", 'error')
+        return
+      }
+      onItemsSelected(items)
+    } catch (err) {
+      // Previously this had no catch at all — a traversal failure (a
+      // permission quirk, an unreadable entry, etc.) would silently
+      // vanish as an unhandled promise rejection with zero feedback,
+      // which looked exactly like "nothing happens" on drop.
+      console.error('Failed to read dropped files/folders:', err)
+      showToast(getErrorMessage(err, "Couldn't read the dropped files/folders."), 'error')
     } finally {
       setProcessingDrop(false)
     }

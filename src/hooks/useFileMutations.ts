@@ -1,6 +1,17 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient, QueryClient } from '@tanstack/react-query'
 import { filesApi, FileEntry } from '@/api/files'
 import { filesQueryKey } from './useFiles'
+import { storageStatsQueryKey } from './useStorageStats'
+
+// Every mutation here changes the file tree in some way, and the
+// dashboard's account-wide stats (totals, largest files, recent uploads)
+// are derived from that same tree — so every one of them needs to
+// invalidate the stats query too, not just the folder listing it directly
+// touched. Centralized here so that's not six places to remember to keep
+// in sync.
+function invalidateStats(queryClient: QueryClient) {
+  queryClient.invalidateQueries({ queryKey: storageStatsQueryKey })
+}
 
 export function useUploadFile(currentPath: string | undefined) {
   const queryClient = useQueryClient()
@@ -11,7 +22,10 @@ export function useUploadFile(currentPath: string | undefined) {
     // Not optimistic — the server response carries the real stat (size,
     // etag, etc.) that a client-side guess can't reliably produce, and the
     // upload progress bar already gives immediate feedback during the wait.
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      invalidateStats(queryClient)
+    },
   })
 }
 
@@ -29,7 +43,10 @@ export function useDeleteFile(currentPath: string | undefined) {
     onError: (_err, _path, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      invalidateStats(queryClient)
+    },
   })
 }
 
@@ -49,7 +66,10 @@ export function useRenameFile(currentPath: string | undefined) {
     onError: (_err, _vars, context) => {
       if (context?.previous) queryClient.setQueryData(key, context.previous)
     },
-    onSettled: () => queryClient.invalidateQueries({ queryKey: key }),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      invalidateStats(queryClient)
+    },
   })
 }
 
@@ -58,7 +78,10 @@ export function useCreateFolder(currentPath: string | undefined) {
   const key = filesQueryKey(currentPath)
   return useMutation({
     mutationFn: (name: string) => filesApi.createFolder(currentPath, name),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: key }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: key })
+      invalidateStats(queryClient)
+    },
   })
 }
 
@@ -66,7 +89,10 @@ export function useMoveFile(currentPath: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => filesApi.move(from, to),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) })
+      invalidateStats(queryClient)
+    },
   })
 }
 
@@ -74,6 +100,9 @@ export function useCopyFile(currentPath: string | undefined) {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: ({ from, to }: { from: string; to: string }) => filesApi.copy(from, to),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) })
+      invalidateStats(queryClient)
+    },
   })
 }

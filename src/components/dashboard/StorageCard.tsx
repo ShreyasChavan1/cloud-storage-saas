@@ -1,13 +1,15 @@
 import { Link } from 'react-router-dom'
-import { Sparkles, AlertCircle } from 'lucide-react'
+import { Sparkles, AlertCircle, Files } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { StorageRing } from '@/components/ui/StorageRing'
 import { useQuota } from '@/hooks/useQuota'
+import { useStorageStats } from '@/hooks/useStorageStats'
 import { formatBytes } from '@/lib/formatBytes'
 
 export function StorageCard() {
   const { data: quota, isLoading, isError } = useQuota()
+  const { data: stats } = useStorageStats()
 
   const usedBytes = quota?.used ?? 0
   const hasKnownLimit = typeof quota?.available === 'number'
@@ -43,6 +45,13 @@ export function StorageCard() {
               ? `${formatBytes(totalBytes - usedBytes)} left on your plan.`
               : "Storage limit isn't reported for this plan."}
           </p>
+          {stats && (
+            <p className="mt-1.5 flex items-center gap-1.5 text-xs text-ink-400">
+              <Files className="h-3.5 w-3.5" />
+              {stats.totalFiles.toLocaleString()} file{stats.totalFiles === 1 ? '' : 's'} in{' '}
+              {stats.totalFolders.toLocaleString()} folder{stats.totalFolders === 1 ? '' : 's'}
+            </p>
+          )}
         </>
       )}
 

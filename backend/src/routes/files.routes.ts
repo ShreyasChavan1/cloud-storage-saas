@@ -25,6 +25,7 @@ router.post('/folder', validate(createFolderSchema), filesController.createFolde
 router.post('/move', validate(moveFileSchema), filesController.move)
 router.post('/copy', validate(copyFileSchema), filesController.copy)
 router.get('/quota', filesController.quota)
+router.get('/stats', filesController.stats)
 router.get('/download', validate(downloadFileSchema), filesController.download)
 
 export default router

@@ -3,6 +3,7 @@ import { StorageCard } from '@/components/dashboard/StorageCard'
 import { QuickUpload } from '@/components/dashboard/QuickUpload'
 import { RecentFiles } from '@/components/dashboard/RecentFiles'
 import { RecentActivity } from '@/components/dashboard/RecentActivity'
+import { LargestFiles } from '@/components/dashboard/LargestFiles'
 import { UpgradeCard } from '@/components/dashboard/UpgradeCard'
 
 export default function Dashboard() {
@@ -27,6 +28,12 @@ export default function Dashboard() {
           <RecentFiles />
         </div>
         <RecentActivity />
+      </div>
+
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <LargestFiles />
+        </div>
       </div>
     </div>
   )

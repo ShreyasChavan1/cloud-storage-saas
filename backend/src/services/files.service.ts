@@ -4,7 +4,7 @@ import { webDavService, WebDavError } from './WebDavService'
 import { sanitizeDavPath } from '../utils/davPath'
 import { decrypt } from '../utils/encryption'
 import { ApiError } from '../utils/ApiError'
-import { toFileEntryDTO, FileEntryDTO } from '../models/file.model'
+import { toFileEntryDTO, FileEntryDTO, toStorageStatsDTO, StorageStatsDTO } from '../models/file.model'
 
 interface DavCredentials {
   nextcloudUsername: string
@@ -161,6 +161,22 @@ export const filesService = {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     try {
       return await webDavService.getQuota(nextcloudUsername, davPassword)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  // Powers the dashboard's account-wide widgets (largest files, total
+  // counts, recent uploads across every folder) — a single Depth:infinity
+  // PROPFIND rather than one call per folder. For very large accounts this
+  // is the one endpoint in this service that isn't O(1) against Nextcloud;
+  // if that ever becomes a real bottleneck, this is the place to add
+  // server-side caching rather than the WebDAV call itself.
+  async stats(userId: string): Promise<StorageStatsDTO> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      const entries = await webDavService.listRecursive(nextcloudUsername, davPassword, '/')
+      return toStorageStatsDTO(entries)
     } catch (err) {
       translateWebDavError(err)
     }
