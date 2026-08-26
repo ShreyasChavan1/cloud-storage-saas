@@ -1,26 +1,33 @@
 import { z } from 'zod'
 
+// Exported so other validators (Phase 10's admin.validator.ts, for
+// creating a user) apply the exact same rules rather than re-declaring
+// them and risking the two drifting apart.
+export const emailField = z.string().trim().toLowerCase().email('Enter a valid email address')
+export const passwordField = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(72, 'Password must be at most 72 characters')
+export const personNameField = z.string().trim().min(2, 'Name must be at least 2 characters').max(80)
+
 export const registerSchema = z.object({
   body: z.object({
-    name: z.string().trim().min(2, 'Name must be at least 2 characters').max(80),
-    email: z.string().trim().toLowerCase().email('Enter a valid email address'),
-    password: z
-      .string()
-      .min(8, 'Password must be at least 8 characters')
-      .max(72, 'Password must be at most 72 characters'),
+    name: personNameField,
+    email: emailField,
+    password: passwordField,
   }),
 })
 
 export const loginSchema = z.object({
   body: z.object({
-    email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+    email: emailField,
     password: z.string().min(1, 'Password is required'),
   }),
 })
 
 export const forgotPasswordSchema = z.object({
   body: z.object({
-    email: z.string().trim().toLowerCase().email('Enter a valid email address'),
+    email: emailField,
   }),
 })
 

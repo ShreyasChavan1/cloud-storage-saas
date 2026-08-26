@@ -1,8 +1,9 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useQuota } from '@/hooks/useQuota'
+import { useAuth } from '@/context/AuthContext'
 import { formatBytes } from '@/lib/formatBytes'
 import { cn } from '@/lib/cn'
 
@@ -18,8 +19,17 @@ const nav = [
   { to: '/files?view=trash', label: 'Trash', icon: Trash2 },
 ]
 
+const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
+    isActive
+      ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
+      : 'text-ink-500 hover:bg-surface-50 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-dark-surface2 dark:hover:text-white'
+  )
+
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
   const { data: quota } = useQuota()
+  const { user } = useAuth()
   const usedBytes = quota?.used ?? 0
   const hasKnownLimit = typeof quota?.available === 'number'
   const totalBytes = hasKnownLimit ? usedBytes + (quota!.available as number) : undefined
@@ -44,14 +54,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
               to={item.to}
               end={item.to === '/files'}
               onClick={onClose}
-              className={({ isActive }) =>
-                cn(
-                  'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
-                    : 'text-ink-500 hover:bg-surface-50 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-dark-surface2 dark:hover:text-white'
-                )
-              }
+              className={navLinkClassName}
             >
               <item.icon className="h-[18px] w-[18px]" strokeWidth={2} />
               {item.label}
@@ -60,18 +63,14 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
 
           <div className="my-3 h-px bg-line dark:bg-dark-border" />
 
-          <NavLink
-            to="/settings"
-            onClick={onClose}
-            className={({ isActive }) =>
-              cn(
-                'flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors',
-                isActive
-                  ? 'bg-brand-50 text-brand-700 dark:bg-brand-900/30 dark:text-brand-300'
-                  : 'text-ink-500 hover:bg-surface-50 hover:text-ink-900 dark:text-ink-400 dark:hover:bg-dark-surface2 dark:hover:text-white'
-              )
-            }
-          >
+          {user?.role === 'ADMIN' && (
+            <NavLink to="/admin" onClick={onClose} className={navLinkClassName}>
+              <ShieldCheck className="h-[18px] w-[18px]" strokeWidth={2} />
+              Admin
+            </NavLink>
+          )}
+
+          <NavLink to="/settings" onClick={onClose} className={navLinkClassName}>
             <Settings className="h-[18px] w-[18px]" strokeWidth={2} />
             Settings
           </NavLink>

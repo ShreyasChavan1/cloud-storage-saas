@@ -19,3 +19,33 @@ export function toAuthUserDTO(user: UserWithPlan): AuthUserDTO {
     role: user.role,
   }
 }
+
+// Admin-facing user shape (Phase 10) — same "never leak passwordHash or
+// nextcloudWebdavPasswordEncrypted" rule as toAuthUserDTO, but includes
+// fields only an admin needs to see (status, createdAt) and deliberately
+// omits nextcloudUsername: it's an internal implementation detail (always
+// equal to `id` by design — see NextcloudService) that has no value to
+// surface in the UI.
+export interface AdminUserDTO {
+  id: string
+  name: string
+  email: string
+  avatarInitials: string
+  role: 'USER' | 'ADMIN'
+  status: 'ACTIVE' | 'SUSPENDED'
+  plan: string | null
+  createdAt: string
+}
+
+export function toAdminUserDTO(user: UserWithPlan): AdminUserDTO {
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    avatarInitials: initialsFromName(user.name),
+    role: user.role,
+    status: user.status,
+    plan: user.plan?.name ?? null,
+    createdAt: user.createdAt.toISOString(),
+  }
+}

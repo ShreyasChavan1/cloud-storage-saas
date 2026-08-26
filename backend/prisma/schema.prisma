@@ -1,6 +1,8 @@
-// Prisma schema — Nimbus backend (Phase 3: billing & subscriptions)
+// Prisma schema — Nimbus backend (through Phase 10: admin dashboard)
 // Run `npm run prisma:migrate` after setting DATABASE_URL in .env,
-// then `npm run prisma:seed` to load the default plans.
+// then `npm run prisma:seed` to load the default plans (and, if
+// ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD are set, a bootstrap admin — see
+// prisma/seed.ts and the Phase 10 README section).
 
 generator client {
   provider = "prisma-client-js"
@@ -14,6 +16,18 @@ datasource db {
 enum Role {
   USER
   ADMIN
+}
+
+// Suspension is enforced at login and refresh (see auth.service.ts) rather
+// than on every request — consistent with this backend's existing
+// stateless-access-token design (no per-request DB hit, no token
+// blacklist). A suspended user's refresh is rejected immediately and their
+// sessions are deleted on suspend, so the worst case is whatever's left of
+// their current access token's lifetime (15m by default) — see the Phase
+// 10 README section for this tradeoff spelled out.
+enum UserStatus {
+  ACTIVE
+  SUSPENDED
 }
 
 enum SubscriptionStatus {
@@ -35,8 +49,9 @@ model User {
   id           String @id @default(uuid())
   name         String
   email        String @unique
-  passwordHash String @map("password_hash")
-  role         Role   @default(USER)
+  passwordHash String     @map("password_hash")
+  role         Role       @default(USER)
+  status       UserStatus @default(ACTIVE)
 
   // Denormalized pointer to the user's current plan, for cheap reads
   // (dashboard storage limits etc.) without joining through subscriptions.
@@ -148,6 +163,15 @@ model Session {
   // row can't be replayed as a live session.
   refreshToken String   @unique @map("refresh_token")
   expiresAt    DateTime @map("expires_at")
+
+  // Added for Phase 10's admin "active sessions" view — captured once at
+  // issueTokenPair() time (see auth.service.ts), never updated afterward.
+  // Best-effort only: both come straight from request headers, so a
+  // client can send whatever User-Agent it wants. Good enough to show an
+  // admin roughly what/where a session is, not a security control.
+  createdAt DateTime @default(now()) @map("created_at")
+  userAgent String?  @map("user_agent")
+  ipAddress String?  @map("ip_address")
 
   @@index([userId])
   @@map("sessions")

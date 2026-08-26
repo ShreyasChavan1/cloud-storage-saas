@@ -25,15 +25,24 @@ function clearRefreshCookie(res: Response) {
   res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' })
 }
 
+// Read once per request rather than inline at each call site below — both
+// register/login/refresh want the same two values for the session row
+// Phase 10's admin "active sessions" view reads (see auth.service.ts's
+// SessionMeta). `req.ip` respects Express's `trust proxy` setting if one
+// is ever configured; today it's just the raw socket address.
+function sessionMetaFrom(req: Request) {
+  return { userAgent: req.headers['user-agent'], ipAddress: req.ip }
+}
+
 export const authController = {
   register: asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken, ...result } = await authService.register(req.body)
+    const { refreshToken, ...result } = await authService.register(req.body, sessionMetaFrom(req))
     setRefreshCookie(res, refreshToken)
     return sendSuccess(res, result, 201)
   }),
 
   login: asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken, ...result } = await authService.login(req.body)
+    const { refreshToken, ...result } = await authService.login(req.body, sessionMetaFrom(req))
     setRefreshCookie(res, refreshToken)
     return sendSuccess(res, result, 200)
   }),
@@ -42,7 +51,7 @@ export const authController = {
     const token = req.cookies?.[REFRESH_COOKIE_NAME]
     if (!token) throw ApiError.unauthorized('No refresh token provided')
 
-    const { refreshToken, ...result } = await authService.refresh(token)
+    const { refreshToken, ...result } = await authService.refresh(token, sessionMetaFrom(req))
     setRefreshCookie(res, refreshToken)
     return sendSuccess(res, result, 200)
   }),

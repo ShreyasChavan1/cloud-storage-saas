@@ -15,6 +15,12 @@ export function validate(schema: AnyZodObject) {
       })
       if (parsed.body) req.body = parsed.body
       if (parsed.params) req.params = parsed.params
+      // Added for Phase 10's listUsersSchema, the first schema in this
+      // codebase to actually rely on query coercion/defaults (page/limit)
+      // reaching the controller — every prior query schema only ever
+      // validated optional strings, so this line was a no-op for them and
+      // stays that way.
+      if (parsed.query) req.query = parsed.query
       next()
     } catch (err) {
       if (err instanceof ZodError) {

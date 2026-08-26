@@ -85,4 +85,40 @@ describe('Auth flow', () => {
     expect(res.body.data.message).toMatch(/if an account exists/i)
     expect(res.body.data.devToken).toBeUndefined()
   })
+
+  // Suspension (Phase 10) is set directly via Prisma here rather than
+  // through the admin API — this file is about auth's own behavior, not
+  // re-testing adminService.setUserStatus (see admin.service.test.ts for
+  // that, and admin.middleware.test.ts for who's allowed to call it).
+  it('rejects login for a suspended account, even with the correct password', async () => {
+    await prisma.user.update({ where: { email: testUser.email }, data: { status: 'SUSPENDED' } })
+
+    const res = await request(app)
+      .post('/api/auth/login')
+      .send({ email: testUser.email, password: testUser.password })
+
+    expect(res.status).toBe(403)
+    expect(res.body.error.message).toMatch(/suspended/i)
+  })
+
+  it('rejects a refresh attempt for an account suspended after the session was issued, and deletes the presented session', async () => {
+    // Reactivate and log in fresh so there's a valid refresh cookie to
+    // present, mirroring a real "was fine, got suspended mid-session" case.
+    await prisma.user.update({ where: { email: testUser.email }, data: { status: 'ACTIVE' } })
+    const loginRes = await request(app)
+      .post('/api/auth/login')
+      .send({ email: testUser.email, password: testUser.password })
+    const cookie = loginRes.headers['set-cookie']
+
+    await prisma.user.update({ where: { email: testUser.email }, data: { status: 'SUSPENDED' } })
+
+    const refreshRes = await request(app).post('/api/auth/refresh-token').set('Cookie', cookie)
+    expect(refreshRes.status).toBe(403)
+
+    // And the now-deleted session can't be replayed even after
+    // reactivating — refresh tokens rotate/delete on use, suspended or not.
+    await prisma.user.update({ where: { email: testUser.email }, data: { status: 'ACTIVE' } })
+    const replayRes = await request(app).post('/api/auth/refresh-token').set('Cookie', cookie)
+    expect(replayRes.status).toBe(401)
+  })
 })

@@ -1,96 +1,59 @@
 import ms from 'ms'
 import { userRepository } from '../repositories/user.repository'
 import { sessionRepository } from '../repositories/session.repository'
-import { planRepository } from '../repositories/plan.repository'
 import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
-import { nextcloudService, NextcloudApiError } from './NextcloudService'
+import { provisionUser } from './userProvisioning.service'
 import { toAuthUserDTO } from '../models/user.model'
-import { hashPassword, comparePassword } from '../utils/password'
+import { comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
 import { generateRandomToken } from '../utils/token'
-import { encrypt } from '../utils/encryption'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
-import { DEFAULT_PLAN_NAME } from '../config/plans'
 import { logger } from '../config/logger'
 import { RegisterInput, LoginInput, ForgotPasswordInput } from '../validators/auth.validator'
 import { AuthResponseDTO } from '../types/auth.types'
 
-async function issueTokenPair(userId: string, email: string) {
+// Best-effort request metadata, captured once at token-issue time and
+// shown on Phase 10's admin "active sessions" view — see
+// session.model.ts's SessionDTO for why this is informational only, not a
+// security control. Optional everywhere so nothing breaks for callers
+// (like the seed script's bootstrap admin, or existing tests) that have no
+// real request to read it from.
+export interface SessionMeta {
+  userAgent?: string
+  ipAddress?: string
+}
+
+async function issueTokenPair(userId: string, email: string, meta?: SessionMeta) {
   const accessToken = signAccessToken({ sub: userId, email })
   const { token: refreshToken } = signRefreshToken({ sub: userId, email })
 
   const expiresAt = new Date(Date.now() + ms(env.JWT_REFRESH_EXPIRES_IN))
-  await sessionRepository.create(userId, hashToken(refreshToken), expiresAt)
+  await sessionRepository.create(userId, hashToken(refreshToken), expiresAt, meta)
 
   return { accessToken, refreshToken }
 }
 
 export const authService = {
-  async register(input: RegisterInput): Promise<AuthResponseDTO & { refreshToken: string }> {
-    const existing = await userRepository.findByEmail(input.email)
-    if (existing) {
-      throw ApiError.conflict('An account with this email already exists')
-    }
-
-    const defaultPlan = await planRepository.findByName(DEFAULT_PLAN_NAME)
-    if (!defaultPlan) {
-      // Fails loudly rather than silently creating a plan-less account —
-      // almost always means `npm run prisma:seed` hasn't been run yet.
-      throw ApiError.internal(
-        `Default plan "${DEFAULT_PLAN_NAME}" not found. Run "npm run prisma:seed" to seed plans.`
-      )
-    }
-
-    const passwordHash = await hashPassword(input.password)
-
-    // 1. Create the PostgreSQL user first — it's the source of truth for
-    // "does this account exist", and gives us a stable, unique id to use
-    // as the Nextcloud username (sidesteps Nextcloud's username character
-    // restrictions entirely — a UUID is always valid).
-    const user = await userRepository.create({
+  async register(
+    input: RegisterInput,
+    meta?: SessionMeta
+  ): Promise<AuthResponseDTO & { refreshToken: string }> {
+    // Self-registration is always role USER on the seeded default plan —
+    // see userProvisioning.service.ts, which this now shares with Phase
+    // 10's admin-initiated account creation.
+    const user = await provisionUser({
       name: input.name,
       email: input.email,
-      passwordHash,
-      plan: { connect: { id: defaultPlan.id } },
+      password: input.password,
     })
 
-    // 2. Provision the matching Nextcloud account, quota-limited to the
-    // user's plan. If this fails, roll back the Postgres user rather than
-    // leaving an account with no storage backend behind it.
-    const nextcloudUsername = user.id
-    let webdavPassword: string
-    try {
-      const result = await nextcloudService.createUser(
-        nextcloudUsername,
-        input.password,
-        defaultPlan.storageLimit,
-        input.name,
-        input.email
-      )
-      webdavPassword = result.webdavPassword
-    } catch (err) {
-      await userRepository.delete(user.id)
-      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
-      logger.error({ userId: user.id, detail }, 'Nextcloud provisioning failed — rolled back Postgres user')
-      throw ApiError.serviceUnavailable('Could not set up your storage account. Please try again.')
-    }
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
 
-    // 3. Store the nextcloud_username and the encrypted WebDAV app password
-    // now that provisioning succeeded. The plaintext webdavPassword never
-    // touches the database or a log line — only encrypt()'s output does.
-    const provisionedUser = await userRepository.update(user.id, {
-      nextcloudUsername,
-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
-    })
-
-    // 4. Return JWT.
-    const { accessToken, refreshToken } = await issueTokenPair(provisionedUser.id, provisionedUser.email)
-
-    return { user: toAuthUserDTO(provisionedUser), accessToken, refreshToken }
+    return { user: toAuthUserDTO(user), accessToken, refreshToken }
   },
 
-  async login(input: LoginInput): Promise<AuthResponseDTO & { refreshToken: string }> {
+  async login(input: LoginInput, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
     const user = await userRepository.findByEmail(input.email)
     // Same message whether the email doesn't exist or the password is
     // wrong — don't leak which one it was.
@@ -103,12 +66,23 @@ export const authService = {
       throw ApiError.unauthorized('Invalid email or password')
     }
 
-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email)
+    // Checked after the password so a suspended user still gets a
+    // generic "invalid credentials" if they've also got the password
+    // wrong, rather than this message confirming the email is real —
+    // then a distinct, honest message once we know both are correct.
+    if (user.status === 'SUSPENDED') {
+      throw ApiError.forbidden('This account has been suspended. Contact support for help.')
+    }
+
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
 
     return { user: toAuthUserDTO(user), accessToken, refreshToken }
   },
 
-  async refresh(rawRefreshToken: string): Promise<AuthResponseDTO & { refreshToken: string }> {
+  async refresh(
+    rawRefreshToken: string,
+    meta?: SessionMeta
+  ): Promise<AuthResponseDTO & { refreshToken: string }> {
     let payload
     try {
       payload = verifyRefreshToken(rawRefreshToken)
@@ -127,10 +101,20 @@ export const authService = {
       throw ApiError.unauthorized('User no longer exists')
     }
 
+    // A user suspended after this session was issued shouldn't be able to
+    // keep renewing it indefinitely. Refresh already does a DB read (the
+    // findById above), so this check is effectively free here — see the
+    // UserStatus enum comment in schema.prisma for why this isn't also
+    // done on every single authenticated request.
+    if (user.status === 'SUSPENDED') {
+      await sessionRepository.deleteByHash(tokenHash)
+      throw ApiError.forbidden('This account has been suspended. Contact support for help.')
+    }
+
     // Rotate: delete the presented session and issue a brand new one. Limits
     // the blast radius if a refresh token is ever stolen from storage.
     await sessionRepository.deleteByHash(tokenHash)
-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email)
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
 
     return { user: toAuthUserDTO(user), accessToken, refreshToken }
   },

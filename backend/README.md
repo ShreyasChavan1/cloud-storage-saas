@@ -1,11 +1,10 @@
-# Nimbus Backend — Phase 2 (Auth Foundation)
+# Nimbus Backend — through Phase 10 (Admin Dashboard)
 
-Express + TypeScript API backing the Nimbus frontend. This phase covers
-**authentication and user accounts only** — no file storage, no Nextcloud.
-It's designed so `AuthContext.tsx` in the frontend can swap its dummy
-`login`/`register`/`logout` calls for real requests against this API without
-changing any component shape (`AuthUserDTO` matches the frontend's `AuthUser`
-interface exactly).
+Express + TypeScript API backing the Nimbus frontend. Started as auth-only
+(Phase 2) and has since grown real file storage over WebDAV (Phase 6), live
+quota/stats reporting for the dashboard (Phase 9), and now a role-protected
+admin surface for managing accounts (Phase 10) — see the phase-by-phase
+sections below for how each layer was added on top of the last.
 
 ## Stack
 Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads)
@@ -65,30 +64,51 @@ docker run --name nimbus-db -e POSTGRES_USER=nimbus -e POSTGRES_PASSWORD=nimbus 
 | POST | `/api/files/move`    | Bearer access token | Move (`{ from, to }`) |
 | POST | `/api/files/copy`    | Bearer access token | Copy (`{ from, to }`) |
 | GET  | `/api/files/quota`   | Bearer access token | Current user's live storage usage |
+| GET  | `/api/files/stats`   | Bearer access token | Account-wide dashboard rollup: total files/folders, largest files, recent uploads (see root README's Phase 9 section) |
 | GET  | `/api/files/download`| Bearer access token | Download a file (`?path=`), streamed |
 | GET  | `/api/health`        | – | Liveness check |
+| GET  | `/api/admin/overview`  | Bearer token, ADMIN | Cheap Postgres-only counts for the admin dashboard's summary cards |
+| GET  | `/api/admin/plans`     | Bearer token, ADMIN | List billing plans (for the create-user form's plan picker) |
+| GET  | `/api/admin/users`     | Bearer token, ADMIN | Paginated, searchable, filterable user list (`?page&limit&search&role&status`) |
+| POST | `/api/admin/users`     | Bearer token, ADMIN | Create a user (same provisioning pipeline as self-registration) |
+| GET  | `/api/admin/users/:id` | Bearer token, ADMIN | Single user detail |
+| DELETE | `/api/admin/users/:id` | Bearer token, ADMIN | Delete a user (Nextcloud account + Postgres row) |
+| PATCH  | `/api/admin/users/:id/status` | Bearer token, ADMIN | Suspend or reactivate (`{ status: 'ACTIVE' \| 'SUSPENDED' }`) |
+| POST   | `/api/admin/users/:id/reset-password` | Bearer token, ADMIN | Admin-driven password reset (`{ password? }` — generates one if omitted) |
+| PATCH  | `/api/admin/users/:id/quota` | Bearer token, ADMIN | Increase/decrease a user's Nextcloud storage quota (`{ storageLimitGb }`) |
+| GET  | `/api/admin/users/:id/storage` | Bearer token, ADMIN | That user's live quota usage (reuses `filesService.quota`) |
+| GET  | `/api/admin/users/:id/storage/breakdown` | Bearer token, ADMIN | That user's largest files / recent uploads (reuses `filesService.stats`) |
+| GET  | `/api/admin/users/:id/payments` | Bearer token, ADMIN | That user's payment history rows (see the Phase 10 section — this is honestly almost always empty) |
+| GET  | `/api/admin/users/:id/sessions` | Bearer token, ADMIN | That user's active (unexpired) sessions |
+| DELETE | `/api/admin/users/:id/sessions/:sessionId` | Bearer token, ADMIN | Revoke a single session |
 
 All responses use the envelope `{ success, data }` or `{ success: false, error: { message, details } }`.
 
 ## Auth model
 - **Access token**: short-lived JWT (default 15m), sent as `Authorization: Bearer <token>`, held in memory on the client.
 - **Refresh token**: longer-lived JWT (default 7d), stored **only** as an httpOnly, `SameSite=Lax` cookie scoped to `/api/auth`. The raw token is never persisted server-side — only its SHA-256 hash — so a database read can't be replayed as a session. Refresh tokens rotate on every use.
+- **Suspension** (Phase 10) is enforced at login and refresh, not on every request — see the Phase 10 section below for why, and the tradeoff that comes with it.
 
 ## Testing
 ```bash
 npm test
 ```
-`tests/auth.test.ts` exercises the full register → login → /me flow against
-a real database — point `DATABASE_URL` at a disposable test database first
-and run `npm run prisma:migrate` against it.
+`tests/auth.test.ts` exercises the full register → login → /me flow (and,
+as of Phase 10, suspension/refresh-rejection) against a real database —
+point `DATABASE_URL` at a disposable test database first and run
+`npm run prisma:migrate` against it. The rest of `tests/*.test.ts` are
+fully mocked unit tests (repositories, NextcloudService, WebDavService all
+mocked out) and run with no external dependencies at all.
 
 ## Wiring up the frontend
-Replace `AuthContext.tsx`'s three dummy functions with calls to this API
-(e.g. via Axios, already installed in the frontend):
+`AuthContext.tsx` in the frontend calls this API directly — no dummy
+functions left:
 - `login(email, password)` → `POST /api/auth/login`
 - `register(name, email, password)` → `POST /api/auth/register`
 - `logout()` → `POST /api/auth/logout`
-- On app load, call `GET /api/auth/me` (if an access token is held) to restore the session instead of the current `localStorage.getItem('nimbus-demo-auth')` check.
+- On app load, `POST /api/auth/refresh-token` (via the httpOnly cookie)
+  silently restores the session if one exists. Access tokens live in memory
+  only, never `localStorage`.
 
 ## Nextcloud integration (Phase 5)
 `src/services/NextcloudService.ts` provisions Nextcloud accounts by calling
@@ -212,9 +232,107 @@ standard, correct interop mechanism for this. A static import would have
 compiled fine but crashed at actual runtime (`ERR_REQUIRE_ESM`) — worth
 knowing if this file ever gets refactored.
 
-## Not included in this phase
-File/folder storage, uploads, sharing, and any Nextcloud/WebDAV integration
-are explicitly out of scope here, per the Phase 2 spec.
+## Admin dashboard (Phase 10)
+Everything under `/api/admin/*` is gated by two middlewares in sequence:
+`requireAuth` (valid access token) then `requireAdmin`
+(`middleware/admin.middleware.ts`).
+
+**`requireAdmin` re-reads the user's role and status from Postgres on every
+request — it never trusts anything in the JWT.** The access token payload
+(`AuthTokenPayload`) only ever carries `{ sub, email }`; it has no `role`
+field to trust or forget to check. This means a demotion or suspension
+takes effect on an admin's very next request, not just their next login —
+the DB read costs one query per admin request, which is a fine trade for
+"can never act on stale authorization" given how infrequently admin routes
+are hit compared to the rest of the API.
+
+**Suspension enforcement lives in `authService`, not in every request's
+middleware chain** — checked once at login (rejects outright) and once at
+refresh (`userRepository.findById` was already happening there; the status
+check just rides along). This is deliberately consistent with this
+backend's existing stateless-access-token design (see "Auth model" above)
+rather than adding a per-request DB hit for every authenticated call in the
+app just for this. The honest tradeoff: suspending someone deletes all
+their sessions (so refresh is rejected immediately), but a *currently
+valid* access token they already hold keeps working until it naturally
+expires — up to `JWT_ACCESS_EXPIRES_IN` (15m by default). Closing that gap
+completely would mean either a token blacklist or moving every route
+behind a DB-backed check, both bigger changes than this feature called for.
+
+**Self-protection guards, enforced in `adminService`, not just the UI:**
+- An admin can't suspend or delete their own account through this API
+  (`assertNotSelf`) — no route to lock yourself out by mistake.
+- The last remaining `ADMIN` account can't be suspended or deleted
+  (`assertNotLastAdmin`, backed by `userRepository.countAdmins`) — no route
+  to leave the app with zero admins and no way back in.
+
+**Creating a user reuses the exact same pipeline as self-registration.**
+The create-Postgres-user → provision-Nextcloud-account →
+rollback-Postgres-on-Nextcloud-failure logic used to live entirely inside
+`authService.register`; it's now `services/userProvisioning.service.ts`'s
+`provisionUser()`, called by both `authService.register` (unchanged
+external behavior) and `adminService.createUser` (which can additionally
+set `role` and `planId` up front — self-registration always defaults both).
+
+**Deleting a user reverses that same ordering, deliberately.**
+Nextcloud account deletion happens *first*; only if that succeeds does the
+Postgres row get deleted. If it fails, both sides are left intact so the
+whole operation is safely retryable — the same "never let a Postgres user
+and its Nextcloud account go out of sync" rule registration's rollback
+follows, just mirrored. Postgres cascade-deletes that user's sessions,
+subscriptions, payments, and password reset tokens automatically
+(`onDelete: Cascade` in `schema.prisma`) — nothing left to clean up by hand.
+
+**Resetting a password follows the same "Nextcloud first" rule.**
+`nextcloudService.changePassword` runs before the Postgres `passwordHash`
+update; if it fails, Postgres is left untouched, so the login password and
+the Nextcloud account password can never drift out of sync (this closes
+the gap the "Known gap" note below used to describe, for the admin-driven
+path — self-service reset-password still isn't wired up). Unlike
+`authService.forgotPassword`'s `devToken` (only returned outside
+production, because that endpoint is public and there's no email
+transport), this endpoint always returns a generated password when it
+generates one — the caller is an authenticated admin, and relaying the
+password to the user out-of-band is the entire point. All of that user's
+sessions are revoked afterward either way.
+
+**Quota adjustment is deliberately separate from the `Plan`/`Subscription`
+billing concept.** `PATCH /users/:id/quota` calls
+`nextcloudService.setQuota` directly (implemented since Phase 5, unused
+until now) — it does not touch `planId`. An admin's one-off quota override
+for a specific user shouldn't silently misrepresent what plan they're
+nominally on, or force inventing a pseudo-plan just to describe an ad-hoc
+change.
+
+**Two small, deliberate schema extensions were needed, not just new
+tables:**
+- `User.status` (`UserStatus`: `ACTIVE` | `SUSPENDED`) — see suspension
+  enforcement above.
+- `Session.createdAt`, `Session.userAgent`, `Session.ipAddress` — the
+  `sessions` table previously only had enough to answer "is this refresh
+  token still valid", not "what should an admin see in an active-sessions
+  list". Captured once at issue time (`issueTokenPair` in
+  `auth.service.ts`, threaded from `req.ip`/`req.headers['user-agent']` in
+  `auth.controller.ts`), never updated afterward — best-effort only, since
+  a client can send whatever `User-Agent` it wants.
+
+**Payments will honestly show an empty list.** `paymentRepository` is
+read-only on purpose: no payment gateway (Stripe, Razorpay, etc.) is
+integrated anywhere in this codebase, so nothing has ever created a
+`Payment` row. `GET /users/:id/payments` reflects that truthfully rather
+than fabricating billing history — see the frontend's admin user detail
+page for how it's presented (an explicit "no gateway integrated yet" empty
+state, not a blank table that looks broken).
+
+**Bootstrapping the first admin.** There's no route to promote a user to
+`ADMIN` (by design — that's an operator action, not something to expose
+over HTTP without an admin already existing to gate it). Set
+`ADMIN_SEED_EMAIL` / `ADMIN_SEED_PASSWORD` (and optionally
+`ADMIN_SEED_NAME`) in `.env` and run `npm run prisma:seed` — `prisma/seed.ts`
+calls the same `provisionUser()` as everything else, just with
+`role: 'ADMIN'`, and skips itself entirely if those env vars aren't set (so
+existing seeding behavior is unaffected if you don't need this). From
+there, every further admin is created through the dashboard itself.
 
 ## Known gap: password reset is not end-to-end yet
 `POST /api/auth/forgot-password` generates a reset token, stores its hash in
