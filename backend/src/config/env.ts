@@ -51,6 +51,20 @@ const envSchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, 'CREDENTIAL_ENCRYPTION_KEY must be exactly 64 hex characters (32 bytes)'),
 
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
+
+  // Razorpay (Phase 11A) — server-side only. RAZORPAY_KEY_ID is also
+  // returned to the client from POST /payments/create-order (Razorpay's
+  // checkout widget needs the public key id to open), but
+  // RAZORPAY_KEY_SECRET never leaves RazorpayService.ts — see that file's
+  // header comment, same isolation pattern as NextcloudService.ts and the
+  // agent's own admin credentials.
+  RAZORPAY_KEY_ID: z.string().min(1, 'RAZORPAY_KEY_ID is required'),
+  RAZORPAY_KEY_SECRET: z.string().min(1, 'RAZORPAY_KEY_SECRET is required'),
+  // Razorpay's primary market is INR; Plan.price has no currency field of
+  // its own (this app has only ever shown a bare "$" in Pricing.tsx), so
+  // this makes the assumption explicit and overridable rather than
+  // silently hardcoding one or the other.
+  RAZORPAY_CURRENCY: z.string().default('INR'),
 })
 
 const parsed = envSchema.safeParse(process.env)

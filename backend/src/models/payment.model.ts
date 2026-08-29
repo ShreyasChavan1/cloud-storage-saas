@@ -9,6 +9,7 @@ export interface PaymentDTO {
   amount: string
   status: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
   provider: string
+  providerOrderId: string | null
   providerPaymentId: string | null
   createdAt: string
 }
@@ -19,6 +20,7 @@ export function toPaymentDTO(payment: Payment): PaymentDTO {
     amount: payment.amount.toString(),
     status: payment.status,
     provider: payment.provider,
+    providerOrderId: payment.providerOrderId,
     providerPaymentId: payment.providerPaymentId,
     createdAt: payment.createdAt.toISOString(),
   }

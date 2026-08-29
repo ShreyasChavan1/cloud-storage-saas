@@ -1,13 +1,14 @@
-# Nimbus Backend — through Phase 10 (Admin Dashboard)
+# Nimbus Backend — through Phase 11A (Backend Payments)
 
 Express + TypeScript API backing the Nimbus frontend. Started as auth-only
 (Phase 2) and has since grown real file storage over WebDAV (Phase 6), live
-quota/stats reporting for the dashboard (Phase 9), and now a role-protected
-admin surface for managing accounts (Phase 10) — see the phase-by-phase
+quota/stats reporting for the dashboard (Phase 9), a role-protected admin
+surface for managing accounts (Phase 10), and now server-side Razorpay
+payments for upgrading/canceling a plan (Phase 11A) — see the phase-by-phase
 sections below for how each layer was added on top of the last.
 
 ## Stack
-Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads)
+Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads) · Razorpay (payments)
 
 ## Folder structure
 ```
@@ -81,6 +82,10 @@ docker run --name nimbus-db -e POSTGRES_USER=nimbus -e POSTGRES_PASSWORD=nimbus 
 | GET  | `/api/admin/users/:id/payments` | Bearer token, ADMIN | That user's payment history rows (see the Phase 10 section — this is honestly almost always empty) |
 | GET  | `/api/admin/users/:id/sessions` | Bearer token, ADMIN | That user's active (unexpired) sessions |
 | DELETE | `/api/admin/users/:id/sessions/:sessionId` | Bearer token, ADMIN | Revoke a single session |
+| POST | `/api/payments/create-order` | Bearer access token | Create a Razorpay order for a paid plan (`{ planId }`) |
+| POST | `/api/payments/verify-payment` | Bearer access token | Verify a Razorpay payment signature; on success, upgrades the plan and syncs Nextcloud quota (`{ razorpayOrderId, razorpayPaymentId, razorpaySignature }`) |
+| POST | `/api/payments/upgrade-plan` | Bearer access token | Switch directly to a $0 plan — no Razorpay involved (`{ planId }`) |
+| POST | `/api/payments/cancel-subscription` | Bearer access token | Cancel the caller's own subscription, reverting to the default plan immediately |
 
 All responses use the envelope `{ success, data }` or `{ success: false, error: { message, details } }`.
 
@@ -97,8 +102,10 @@ npm test
 as of Phase 10, suspension/refresh-rejection) against a real database —
 point `DATABASE_URL` at a disposable test database first and run
 `npm run prisma:migrate` against it. The rest of `tests/*.test.ts` are
-fully mocked unit tests (repositories, NextcloudService, WebDavService all
-mocked out) and run with no external dependencies at all.
+fully mocked unit tests (repositories, NextcloudService, WebDavService,
+and — as of Phase 11A — RazorpayService and Prisma's `$transaction` are
+all mocked out) and run with no external dependencies at all, including no
+real Razorpay account or keys.
 
 ## Wiring up the frontend
 `AuthContext.tsx` in the frontend calls this API directly — no dummy
@@ -333,6 +340,103 @@ calls the same `provisionUser()` as everything else, just with
 `role: 'ADMIN'`, and skips itself entirely if those env vars aren't set (so
 existing seeding behavior is unaffected if you don't need this). From
 there, every further admin is created through the dashboard itself.
+
+## Backend payments (Phase 11A)
+Razorpay integration, server-side only — there is no Razorpay checkout
+widget or any other payment UI anywhere in the frontend. These four
+endpoints are the complete surface; a real frontend integration would call
+`create-order`, hand the response to Razorpay's own checkout.js, and call
+`verify-payment` with whatever that returns. None of that client-side
+plumbing exists yet, by design (out of scope for this phase).
+
+**`RazorpayService.ts` is the only place `RAZORPAY_KEY_SECRET` is read** —
+same isolation principle as `NextcloudService.ts` and the provisioning
+agent's own admin credentials. `RAZORPAY_KEY_ID` is deliberately exposed
+(it's not secret — Razorpay's checkout widget needs the public key id
+client-side), returned from `create-order`'s response as `keyId`.
+
+**Signature verification is hand-computed, not the SDK's own helper.** The
+`razorpay` package exports `Razorpay.validateWebhookSignature`, but that
+covers a *different* flow — HMAC over a raw webhook request body, using a
+separate webhook secret this app doesn't even have configured. Checkout
+signature verification uses its own documented formula instead:
+`hmac_sha256(orderId + "|" + paymentId, key_secret)`, computed with Node's
+own `crypto` and compared with `crypto.timingSafeEqual` (not `===`) — the
+same reasoning already applied to the provisioning agent's bearer token
+check.
+
+**Every plan change — paid or free — goes through one shared function,**
+`payment.service.ts`'s `applyPlanChange`. It's what `verifyPayment` calls
+after a valid signature, and what `upgradePlan`/`cancelSubscription` call
+directly for the no-payment case. All three ultimately mean the same
+thing: "this user is now on this plan," and there's exactly one place that
+updates `Subscription` + `User.planId` together and syncs the real
+Nextcloud quota to match.
+
+**Subscription is one row per user, not a historical ledger — Payment is
+the ledger.** `schema.prisma`'s `Subscription.userId` gained a `@unique`
+constraint this phase specifically so plan changes can be a race-safe
+upsert rather than accumulating a row per billing period. `Payment`
+already served as the append-only history (every attempt, successful or
+not, is its own permanent row); splitting "current state" from "history"
+across the two tables this way avoids needing period-boundary or
+supersession logic that a genuine subscription-ledger design would require
+— explicitly a Phase 11B ("recurring billing") concern, not this one.
+
+**A Payment row is created exactly once, at `create-order` time — never
+by `verify-payment`.** This is the main thing that makes replayed/duplicate
+verification safe: `verifyPayment` only ever looks up and updates the one
+row `createOrder` already made (by `providerOrderId`, `@unique`), it never
+has a code path that creates a second one. Layered on top of that:
+- If the looked-up payment's status is already `SUCCEEDED`, `verifyPayment`
+  returns the current state immediately without re-verifying the
+  signature, re-running `applyPlanChange`, or touching Nextcloud again —
+  this, not the database constraints, is what makes a client (or an
+  attacker) simply calling this endpoint twice a no-op instead of a
+  duplicate charge/upgrade.
+- `Payment.providerPaymentId` is also `@unique` at the DB level, as a
+  second line of defense against ever recording the same Razorpay charge
+  twice, independent of the application-level check above.
+- An invalid signature marks the payment `FAILED` (not left `PENDING`),
+  so a subsequent call with the same bad inputs is rejected outright
+  rather than re-attempting verification indefinitely.
+
+**Handling "the payment succeeded but Nextcloud didn't sync":**
+`applyPlanChange` commits the `Subscription`/`User.planId` change in one
+Postgres transaction first, then attempts the Nextcloud quota update as a
+separate, best-effort step afterward — the two can't share a transaction
+(one is Postgres, the other an HTTP call to a different system entirely).
+If that Nextcloud call fails, the plan change is **not rolled back**: for
+the paid path a real charge already happened, and for the free path there
+was never a charge to protect either way — in both cases the entitlement
+is genuinely earned, and reverting it because Nextcloud was briefly
+unreachable would be the wrong failure mode. Instead,
+`Subscription.quotaSyncedAt` is left `null` as an honest, queryable marker,
+the failure is logged, and the API response includes `quotaSynced: false`
+so a caller (or a human reading logs) can tell. **No retry or
+reconciliation job exists to act on that marker** — building one is
+explicitly Phase 11B territory; this phase only leaves the marker for a
+future one to pick up.
+
+**`upgrade-plan` only ever accepts a $0 plan.** Any plan with `price > 0`
+is rejected with a message pointing at `create-order`/`verify-payment`
+instead — without that check, this endpoint would be a straightforward
+way to get a paid plan for free.
+
+**`cancel-subscription` takes effect immediately**, reverting to the
+default (`Free`) plan and syncing quota down right away, rather than
+"stays on the paid plan until the current period ends." The latter is a
+real, common pattern, but doing it correctly needs something to actually
+act on `renewalDate` once it arrives — a scheduled job, which is Phase
+11B's "recurring billing," not this phase's. Immediate-effect is the
+simplest complete behavior available without one.
+
+**Currency and amounts:** `RAZORPAY_CURRENCY` (default `INR`) decides the
+unit `Plan.price` gets converted into — Razorpay orders are created in the
+smallest unit of that currency (paise for INR, cents for USD), computed as
+`round(price * 100)`. `Plan.price` itself has no currency field of its own
+(this app has only ever shown a bare `$` in `Pricing.tsx`), so this makes
+that assumption explicit and overridable rather than silently picking one.
 
 ## Known gap: password reset is not end-to-end yet
 `POST /api/auth/forgot-password` generates a reset token, stores its hash in

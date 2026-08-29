@@ -18,3 +18,5 @@ process.env.NEXTCLOUD_URL ??= 'http://127.0.0.1:8080'
 // A fixed (not random) 64-hex-char test key — deliberately not secret,
 // never use this outside tests.
 process.env.CREDENTIAL_ENCRYPTION_KEY ??= 'a'.repeat(64)
+process.env.RAZORPAY_KEY_ID ??= 'rzp_test_not_for_real_use'
+process.env.RAZORPAY_KEY_SECRET ??= 'test-razorpay-secret-not-for-real-use'

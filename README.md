@@ -121,9 +121,15 @@ See `src/components/admin/AdminUsersTable.test.tsx` for coverage.
 - **Recent activity** (`RecentActivity.tsx`) — there's no activity-log
   endpoint on the backend at all, so this card doesn't fabricate anything;
   it plainly says activity tracking isn't available yet.
-- **Payments** — the admin payments view is real and reads real (currently
-  always-empty) data; there's just no payment gateway anywhere in this
-  project yet to ever populate it. See `backend/README.md`.
+- **Payments** — the backend now has a real, working Razorpay integration
+  (create-order, verify-payment, upgrade-plan, cancel-subscription — see
+  `backend/README.md`'s Phase 11A section), but there's still no frontend
+  for any of it, deliberately (out of scope for that phase). Nothing in
+  this UI calls those endpoints yet — no checkout widget, no "Upgrade" or
+  "Cancel" button wired up anywhere, including `Pricing.tsx` and Settings'
+  billing tab, both of which are still static. The admin payments view
+  (Phase 10) will show real rows once something actually calls these
+  endpoints; until then it's still an honestly-empty list, same as before.
 - **Self-service password reset** — `forgot-password` issues a token but
   there's still no completion route or email transport (admin-driven reset,
   added in Phase 10, is a separate, already-working path).
