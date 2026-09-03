@@ -48,4 +48,11 @@ router.delete(
   adminController.revokeSession
 )
 
+// Phase 11B — meant for an external scheduler to call periodically (cron,
+// a platform's own scheduled-job feature, ...); see
+// reconciliation.service.ts's top comment. No body, so no validate(...) —
+// consistent with overview/listPlans above, the only other no-input
+// routes on this router.
+router.post('/reconcile-subscriptions', adminController.reconcileSubscriptions)
+
 export default router

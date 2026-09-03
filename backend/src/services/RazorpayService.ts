@@ -3,15 +3,17 @@ import crypto from 'crypto'
 import { env } from '../config/env'
 
 /**
- * Thin wrapper around the Razorpay Node SDK for Phase 11A. This is the
- * ONLY place RAZORPAY_KEY_SECRET is read — same isolation principle as
- * NextcloudService.ts and the provisioning agent's own admin credentials:
- * callers get typed results, never the secret itself.
+ * Thin wrapper around the Razorpay Node SDK. This is the ONLY place
+ * RAZORPAY_KEY_SECRET and RAZORPAY_WEBHOOK_SECRET are read — same
+ * isolation principle as NextcloudService.ts and the provisioning agent's
+ * own admin credentials: callers get typed results/booleans, never the
+ * secrets themselves.
  *
- * No webhook handling here — Phase 11A is explicitly the synchronous
- * create-order / verify-payment flow only. See backend/README.md's Phase
- * 11A section for why webhooks, recurring billing, and reconciliation are
- * out of scope for this phase.
+ * Phase 11A added the synchronous create-order / verify-payment flow.
+ * Phase 11B adds webhook signature verification (see
+ * verifyWebhookSignature below) so payment.service.ts and webhook.service.ts
+ * can treat Razorpay's asynchronous webhook deliveries as an equally
+ * authoritative source of truth — not just the checkout callback.
  */
 
 export class RazorpayApiError extends Error {
@@ -93,6 +95,30 @@ export const razorpayService = {
     // produces a mismatched-length buffer here — still safely rejected
     // below, never a thrown error a caller would need to handle specially.
     const provided = Buffer.from(params.signature, 'hex')
+    if (expected.length !== provided.length) return false
+    return crypto.timingSafeEqual(expected, provided)
+  },
+
+  /**
+   * Verifies the `X-Razorpay-Signature` header on an incoming webhook
+   * delivery. Per Razorpay's documented webhook formula — DIFFERENT from
+   * verifyPaymentSignature above in two ways: it HMACs the raw request
+   * body bytes (not an `orderId|paymentId` string), and it uses
+   * RAZORPAY_WEBHOOK_SECRET (a separate secret configured in the Razorpay
+   * dashboard's Webhooks section, not RAZORPAY_KEY_SECRET).
+   *
+   * `rawBody` must be the exact bytes Razorpay signed — see
+   * webhook.controller.ts / app.ts for why that route is mounted with
+   * express.raw() ahead of the app-wide express.json(). Passing an
+   * already-parsed-then-reserialized body here would silently break
+   * verification for any payload where re-serialization doesn't reproduce
+   * the original bytes exactly.
+   */
+  verifyWebhookSignature(rawBody: string | Buffer, signature: string): boolean {
+    const expectedHex = crypto.createHmac('sha256', env.RAZORPAY_WEBHOOK_SECRET).update(rawBody).digest('hex')
+
+    const expected = Buffer.from(expectedHex, 'hex')
+    const provided = Buffer.from(signature, 'hex')
     if (expected.length !== provided.length) return false
     return crypto.timingSafeEqual(expected, provided)
   },

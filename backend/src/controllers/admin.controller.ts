@@ -79,4 +79,16 @@ export const adminController = {
     await adminService.revokeSession(req.params.id, req.params.sessionId)
     return sendSuccess(res, { revoked: true })
   }),
+
+  // Phase 11B — meant to be invoked by an external scheduler (cron, a
+  // platform's own scheduled-job feature, ...) rather than anything in
+  // this app's own request/response cycle; see reconciliation.service.ts's
+  // own top comment for why no in-process scheduler was added instead.
+  // Admin-only (requireAdmin, applied to this whole router) rather than a
+  // public/unauthenticated endpoint, since unlike the Razorpay webhook
+  // route this has no signature of its own to verify a caller by.
+  reconcileSubscriptions: asyncHandler(async (_req: Request, res: Response) => {
+    const summary = await adminService.reconcileSubscriptions()
+    return sendSuccess(res, summary)
+  }),
 }

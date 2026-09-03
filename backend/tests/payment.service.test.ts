@@ -40,8 +40,13 @@ jest.mock('../src/repositories/payment.repository', () => ({
 
 const mockFindSubscriptionByUserId = jest.fn()
 const mockMarkQuotaSynced = jest.fn()
+const mockSetCancelAtPeriodEnd = jest.fn()
 jest.mock('../src/repositories/subscription.repository', () => ({
-  subscriptionRepository: { findByUserId: mockFindSubscriptionByUserId, markQuotaSynced: mockMarkQuotaSynced },
+  subscriptionRepository: {
+    findByUserId: mockFindSubscriptionByUserId,
+    markQuotaSynced: mockMarkQuotaSynced,
+    setCancelAtPeriodEnd: mockSetCancelAtPeriodEnd,
+  },
 }))
 
 const mockVerifyPaymentSignature = jest.fn()
@@ -98,6 +103,7 @@ function subscriptionRow(overrides: Record<string, unknown> = {}) {
     status: 'ACTIVE',
     renewalDate: new Date('2026-02-01T00:00:00.000Z'),
     quotaSyncedAt: null,
+    cancelAtPeriodEnd: false,
     plan: { id: 'plan-pro', name: 'Pro', storageLimit: 500, price: { toString: () => '24.99' } as any },
     ...overrides,
   }
@@ -130,14 +136,48 @@ describe('paymentService.createOrder', () => {
     expect(mockCreateOrder).not.toHaveBeenCalled()
   })
 
-  it('rejects re-purchasing the plan the user is already actively on', async () => {
+  it('rejects re-purchasing the plan the user is already actively on, well within the current period', async () => {
     mockFindPlanById.mockResolvedValue(planRow())
-    mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ planId: 'plan-pro', status: 'ACTIVE' }))
+    mockFindSubscriptionByUserId.mockResolvedValue(
+      subscriptionRow({ planId: 'plan-pro', status: 'ACTIVE', renewalDate: new Date('2099-01-01T00:00:00.000Z') })
+    )
 
     await expect(paymentService.createOrder(USER_ID, { planId: 'plan-pro' })).rejects.toMatchObject({
       statusCode: 400,
     })
     expect(mockCreateOrder).not.toHaveBeenCalled()
+  })
+
+  it('allows repurchasing the current plan as a renewal once inside the renewal window', async () => {
+    const plan = planRow()
+    mockFindPlanById.mockResolvedValue(plan)
+    // renewalDate 3 days out — inside RENEWAL_WINDOW_DAYS (7)
+    const soon = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000)
+    mockFindSubscriptionByUserId.mockResolvedValue(
+      subscriptionRow({ planId: 'plan-pro', status: 'ACTIVE', renewalDate: soon })
+    )
+    mockCreateOrder.mockResolvedValue({ id: 'order_renew1', amount: 2499, currency: 'INR' })
+    mockPaymentCreate.mockResolvedValue(paymentRow({ id: 'payment-renew', providerOrderId: 'order_renew1' }))
+
+    const result = await paymentService.createOrder(USER_ID, { planId: 'plan-pro' })
+
+    expect(mockCreateOrder).toHaveBeenCalled()
+    expect(result.orderId).toBe('order_renew1')
+  })
+
+  it('allows repurchasing the current plan once renewalDate has already passed', async () => {
+    const plan = planRow()
+    mockFindPlanById.mockResolvedValue(plan)
+    const past = new Date(Date.now() - 24 * 60 * 60 * 1000)
+    mockFindSubscriptionByUserId.mockResolvedValue(
+      subscriptionRow({ planId: 'plan-pro', status: 'ACTIVE', renewalDate: past })
+    )
+    mockCreateOrder.mockResolvedValue({ id: 'order_renew2', amount: 2499, currency: 'INR' })
+    mockPaymentCreate.mockResolvedValue(paymentRow({ id: 'payment-renew2', providerOrderId: 'order_renew2' }))
+
+    await expect(paymentService.createOrder(USER_ID, { planId: 'plan-pro' })).resolves.toMatchObject({
+      orderId: 'order_renew2',
+    })
   })
 
   it('creates a Razorpay order in paise and a PENDING Payment row linked to it', async () => {
@@ -313,6 +353,76 @@ describe('paymentService.verifyPayment', () => {
   })
 })
 
+describe('paymentService.confirmPayment (Phase 11B — webhook path)', () => {
+  it('returns null for an order this backend never created', async () => {
+    mockFindByProviderOrderId.mockResolvedValue(null)
+    const result = await paymentService.confirmPayment('order_ghost', 'pay_1')
+    expect(result).toBeNull()
+  })
+
+  it('throws a 409 conflict for a payment already FAILED or REFUNDED', async () => {
+    mockFindByProviderOrderId.mockResolvedValue(paymentRow({ status: 'FAILED' }))
+    await expect(paymentService.confirmPayment('order_123', 'pay_1')).rejects.toMatchObject({ statusCode: 409 })
+  })
+
+  it('is idempotent for an already-SUCCEEDED payment: no second plan change or quota sync', async () => {
+    mockFindByProviderOrderId.mockResolvedValue(
+      paymentRow({ status: 'SUCCEEDED', providerPaymentId: 'pay_1', subscriptionId: 'sub-1' })
+    )
+    mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ quotaSyncedAt: new Date() }))
+
+    const result = await paymentService.confirmPayment('order_123', 'pay_1')
+
+    expect(mockPrismaTransaction).not.toHaveBeenCalled()
+    expect(mockSetQuota).not.toHaveBeenCalled()
+    expect(mockMarkSucceeded).not.toHaveBeenCalled()
+    expect(result?.quotaSynced).toBe(true)
+  })
+
+  it('confirms a PENDING payment: applies the plan change, links + succeeds the payment, syncs quota', async () => {
+    mockFindByProviderOrderId.mockResolvedValue(paymentRow())
+    mockFindPlanById.mockResolvedValue(planRow())
+    mockFindUserById.mockResolvedValue(userRow())
+    mockSetQuota.mockResolvedValue(undefined)
+    mockMarkQuotaSynced.mockResolvedValue(undefined)
+    mockMarkSucceeded.mockResolvedValue(paymentRow({ status: 'SUCCEEDED', providerPaymentId: 'pay_1' }))
+
+    const result = await paymentService.confirmPayment('order_123', 'pay_1')
+
+    // No checkout-signature check here — that's verifyPayment's job, not
+    // this webhook-facing flow's, which trusts the caller (webhook.service.ts)
+    // to have already verified the webhook's own signature.
+    expect(mockVerifyPaymentSignature).not.toHaveBeenCalled()
+    expect(mockMarkSucceeded).toHaveBeenCalledWith('payment-1', {
+      providerPaymentId: 'pay_1',
+      subscriptionId: 'sub-1',
+    })
+    expect(result?.subscription.status).toBe('ACTIVE')
+    expect(result?.quotaSynced).toBe(true)
+  })
+
+  it('calling it twice for the same order only ever succeeds the payment and syncs quota once', async () => {
+    const pending = paymentRow()
+    mockFindByProviderOrderId.mockResolvedValueOnce(pending)
+    mockFindPlanById.mockResolvedValue(planRow())
+    mockFindUserById.mockResolvedValue(userRow())
+    mockSetQuota.mockResolvedValue(undefined)
+    mockMarkQuotaSynced.mockResolvedValue(undefined)
+    const succeeded = paymentRow({ status: 'SUCCEEDED', providerPaymentId: 'pay_1', subscriptionId: 'sub-1' })
+    mockMarkSucceeded.mockResolvedValue(succeeded)
+
+    await paymentService.confirmPayment('order_123', 'pay_1')
+
+    mockFindByProviderOrderId.mockResolvedValueOnce(succeeded)
+    mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ quotaSyncedAt: new Date() }))
+
+    await paymentService.confirmPayment('order_123', 'pay_1')
+
+    expect(mockSetQuota).toHaveBeenCalledTimes(1)
+    expect(mockMarkSucceeded).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('paymentService.upgradePlan', () => {
   it('rejects an unknown plan', async () => {
     mockFindPlanById.mockResolvedValue(null)
@@ -381,5 +491,54 @@ describe('paymentService.cancelSubscription', () => {
       expect.objectContaining({ create: expect.objectContaining({ status: 'CANCELED', planId: 'plan-free' }) })
     )
     expect(mockSetQuota).toHaveBeenCalledWith('nc-user-1', 5)
+  })
+
+  describe('atPeriodEnd: true (Phase 11B)', () => {
+    it('rejects when there is no subscription to cancel', async () => {
+      mockFindSubscriptionByUserId.mockResolvedValue(null)
+      await expect(paymentService.cancelSubscription(USER_ID, { atPeriodEnd: true })).rejects.toMatchObject({
+        statusCode: 400,
+      })
+    })
+
+    it('rejects scheduling a cancellation that is already scheduled', async () => {
+      mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ status: 'ACTIVE', cancelAtPeriodEnd: true }))
+      await expect(paymentService.cancelSubscription(USER_ID, { atPeriodEnd: true })).rejects.toMatchObject({
+        statusCode: 400,
+      })
+      expect(mockSetCancelAtPeriodEnd).not.toHaveBeenCalled()
+    })
+
+    it('flips cancelAtPeriodEnd without touching plan, status, or quota', async () => {
+      mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ status: 'ACTIVE', cancelAtPeriodEnd: false }))
+      mockSetCancelAtPeriodEnd.mockResolvedValue(subscriptionRow({ status: 'ACTIVE', cancelAtPeriodEnd: true }))
+
+      const result = await paymentService.cancelSubscription(USER_ID, { atPeriodEnd: true })
+
+      expect(mockSetCancelAtPeriodEnd).toHaveBeenCalledWith('sub-1', true)
+      expect(mockPrismaTransaction).not.toHaveBeenCalled()
+      expect(mockSetQuota).not.toHaveBeenCalled()
+      expect(result.subscription.status).toBe('ACTIVE')
+      expect(result.subscription.cancelAtPeriodEnd).toBe(true)
+    })
+  })
+})
+
+describe('paymentService.expireSubscriptionToFree (Phase 11B — reconciliation only)', () => {
+  it('reverts to the default (Free) plan with status EXPIRED, distinct from user-initiated CANCELED', async () => {
+    const freePlan = planRow({ id: 'plan-free', name: 'Free', storageLimit: 5, price: { toString: () => '0.00' } })
+    mockFindPlanByName.mockResolvedValue(freePlan)
+    mockFindUserById.mockResolvedValue(userRow())
+    mockSetQuota.mockResolvedValue(undefined)
+    mockMarkQuotaSynced.mockResolvedValue(undefined)
+
+    const result = await paymentService.expireSubscriptionToFree(USER_ID)
+
+    expect(mockFindPlanByName).toHaveBeenCalledWith('Free')
+    expect(mockTxSubscriptionUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ create: expect.objectContaining({ status: 'EXPIRED', planId: 'plan-free' }) })
+    )
+    expect(mockSetQuota).toHaveBeenCalledWith('nc-user-1', 5)
+    expect(result.subscription.status).toBe('EXPIRED')
   })
 })

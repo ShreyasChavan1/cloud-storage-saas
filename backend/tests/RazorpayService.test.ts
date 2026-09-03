@@ -78,6 +78,67 @@ describe('razorpayService.verifyPaymentSignature', () => {
   })
 })
 
+describe('razorpayService.verifyWebhookSignature (Phase 11B)', () => {
+  // Matches tests/jest.setup.ts's fallback value, same pattern as
+  // KEY_SECRET above — deliberately a DIFFERENT env var/secret from
+  // verifyPaymentSignature's, since that's the whole point of this being
+  // a separate method with a separate formula.
+  const WEBHOOK_SECRET = process.env.RAZORPAY_WEBHOOK_SECRET!
+
+  function realWebhookSignature(rawBody: string): string {
+    return crypto.createHmac('sha256', WEBHOOK_SECRET).update(rawBody).digest('hex')
+  }
+
+  it('accepts a correctly computed signature over the raw body', () => {
+    const rawBody = JSON.stringify({ event: 'payment.captured', payload: {} })
+    const signature = realWebhookSignature(rawBody)
+
+    expect(razorpayService.verifyWebhookSignature(rawBody, signature)).toBe(true)
+  })
+
+  it('accepts a Buffer body identically to the equivalent string', () => {
+    const rawBody = JSON.stringify({ event: 'payment.captured', payload: {} })
+    const signature = realWebhookSignature(rawBody)
+
+    expect(razorpayService.verifyWebhookSignature(Buffer.from(rawBody, 'utf8'), signature)).toBe(true)
+  })
+
+  it('rejects a signature computed over a different body — e.g. one byte changed in transit', () => {
+    const original = JSON.stringify({ event: 'payment.captured', payload: { a: 1 } })
+    const tampered = JSON.stringify({ event: 'payment.captured', payload: { a: 2 } })
+    const signature = realWebhookSignature(original)
+
+    expect(razorpayService.verifyWebhookSignature(tampered, signature)).toBe(false)
+  })
+
+  it('rejects a signature computed with a different (e.g. forged, or the wrong) secret', () => {
+    const rawBody = JSON.stringify({ event: 'refund.created', payload: {} })
+    const forged = crypto.createHmac('sha256', 'not-the-real-webhook-secret').update(rawBody).digest('hex')
+
+    expect(razorpayService.verifyWebhookSignature(rawBody, forged)).toBe(false)
+  })
+
+  it("rejects verifyPaymentSignature's own HMAC formula/secret being reused here by mistake", () => {
+    const rawBody = JSON.stringify({ event: 'payment.captured', payload: {} })
+    // Uses RAZORPAY_KEY_SECRET (verifyPaymentSignature's secret), not
+    // RAZORPAY_WEBHOOK_SECRET — must NOT verify against this method.
+    const wrongSecretSignature = crypto.createHmac('sha256', KEY_SECRET).update(rawBody).digest('hex')
+
+    expect(razorpayService.verifyWebhookSignature(rawBody, wrongSecretSignature)).toBe(false)
+  })
+
+  it('rejects a garbage/malformed signature without throwing', () => {
+    const rawBody = JSON.stringify({ event: 'payment.captured', payload: {} })
+    expect(() => razorpayService.verifyWebhookSignature(rawBody, 'not-valid-hex-at-all!!')).not.toThrow()
+    expect(razorpayService.verifyWebhookSignature(rawBody, 'not-valid-hex-at-all!!')).toBe(false)
+  })
+
+  it('rejects an empty signature without throwing', () => {
+    const rawBody = JSON.stringify({ event: 'payment.captured', payload: {} })
+    expect(razorpayService.verifyWebhookSignature(rawBody, '')).toBe(false)
+  })
+})
+
 describe('razorpayService.createOrder', () => {
   afterEach(() => jest.clearAllMocks())
 

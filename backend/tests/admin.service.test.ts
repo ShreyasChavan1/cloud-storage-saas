@@ -78,6 +78,16 @@ jest.mock('../src/utils/password', () => ({
   hashPassword: jest.fn(async (plain: string) => `hashed:${plain}`),
 }))
 
+// Phase 11B — reconcileSubscriptions is a thin pass-through; mocked here
+// rather than exercised for real so this suite doesn't also need to stand
+// up subscriptionRepository/paymentService/prisma mocks it has no other
+// reason to care about. See reconciliation.service.test.ts for the actual
+// sweep logic's coverage.
+const mockReconciliationRun = jest.fn()
+jest.mock('../src/services/reconciliation.service', () => ({
+  reconciliationService: { run: mockReconciliationRun },
+}))
+
 import { adminService } from '../src/services/admin.service'
 import { NextcloudApiError } from '../src/services/NextcloudService'
 
@@ -449,6 +459,25 @@ describe('adminService', () => {
       })
       expect(mockNcSetQuota).not.toHaveBeenCalled()
       expect(mockFilesQuota).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('reconcileSubscriptions (Phase 11B)', () => {
+    it('delegates straight to reconciliationService.run and returns its summary untouched', async () => {
+      const summary = {
+        canceledAtPeriodEnd: 1,
+        markedPastDue: 2,
+        expiredToFree: 0,
+        quotaSynced: 3,
+        quotaSyncStillFailing: 0,
+        errors: [] as string[],
+      }
+      mockReconciliationRun.mockResolvedValue(summary)
+
+      const result = await adminService.reconcileSubscriptions()
+
+      expect(mockReconciliationRun).toHaveBeenCalledWith()
+      expect(result).toBe(summary)
     })
   })
 })

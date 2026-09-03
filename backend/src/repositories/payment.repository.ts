@@ -35,6 +35,13 @@ export const paymentRepository = {
     return prisma.payment.findUnique({ where: { providerOrderId } })
   },
 
+  // Phase 11B — how webhook.service.ts's refund handler locates the
+  // Payment a `refund.*` event belongs to; Razorpay refund payloads carry
+  // the payment id, not the order id.
+  findByProviderPaymentId(providerPaymentId: string) {
+    return prisma.payment.findUnique({ where: { providerPaymentId } })
+  },
+
   markSucceeded(id: string, params: { providerPaymentId: string; subscriptionId: string }) {
     return prisma.payment.update({
       where: { id },
@@ -48,5 +55,12 @@ export const paymentRepository = {
 
   markFailed(id: string) {
     return prisma.payment.update({ where: { id }, data: { status: 'FAILED' } })
+  },
+
+  // Phase 11B — only ever called for a payment already SUCCEEDED (see
+  // webhook.service.ts's handleRefund); PaymentStatus.REFUNDED existed in
+  // the schema since Phase 11A but nothing wrote it until now.
+  markRefunded(id: string) {
+    return prisma.payment.update({ where: { id }, data: { status: 'REFUNDED' } })
   },
 }

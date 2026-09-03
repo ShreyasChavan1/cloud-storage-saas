@@ -4,6 +4,7 @@ import { sessionRepository } from '../repositories/session.repository'
 import { paymentRepository } from '../repositories/payment.repository'
 import { planRepository } from '../repositories/plan.repository'
 import { provisionUser } from './userProvisioning.service'
+import { reconciliationService, ReconciliationSummary } from './reconciliation.service'
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { filesService } from './files.service'
 import { toAdminUserDTO, AdminUserDTO } from '../models/user.model'
@@ -267,5 +268,14 @@ export const adminService = {
     ])
 
     return { totalUsers, activeUsers, suspendedUsers, adminCount, activeSessions }
+  },
+
+  // Phase 11B — thin pass-through to reconciliation.service.ts, kept here
+  // rather than called directly from admin.controller.ts purely so every
+  // adminController handler goes through adminService the same way (see
+  // this file's own getUserPayments/getUserSessions for the same pattern
+  // with other services' repositories).
+  reconcileSubscriptions(): Promise<ReconciliationSummary> {
+    return reconciliationService.run()
   },
 }

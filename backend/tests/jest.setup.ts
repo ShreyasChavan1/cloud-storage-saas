@@ -20,3 +20,4 @@ process.env.NEXTCLOUD_URL ??= 'http://127.0.0.1:8080'
 process.env.CREDENTIAL_ENCRYPTION_KEY ??= 'a'.repeat(64)
 process.env.RAZORPAY_KEY_ID ??= 'rzp_test_not_for_real_use'
 process.env.RAZORPAY_KEY_SECRET ??= 'test-razorpay-secret-not-for-real-use'
+process.env.RAZORPAY_WEBHOOK_SECRET ??= 'test-razorpay-webhook-secret-not-real'

@@ -1,6 +1,25 @@
 import request from 'supertest'
+
+const mockCreateUser = jest.fn()
+
+jest.mock('../src/services/NextcloudService', () => {
+  const actual = jest.requireActual('../src/services/NextcloudService')
+  return {
+    ...actual,
+    nextcloudService: {
+      ...actual.nextcloudService,
+      createUser: mockCreateUser,
+    },
+  }
+})
+
 import { createApp } from '../src/app'
 import { prisma } from '../src/database/prisma'
+
+// This suite uses a real Postgres database. The first Prisma query can be slow
+// when the test database/serverless connection is cold, so allow enough time
+// for the integration test without depending on remote Nextcloud latency.
+jest.setTimeout(30000)
 
 // These tests hit a real Postgres database via Prisma — point DATABASE_URL
 // (in .env or CI env vars) at a disposable test database before running.
@@ -11,8 +30,12 @@ const app = createApp()
 const testUser = {
   name: 'Test User',
   email: `test-${Date.now()}@example.com`,
-  password: 'supersecret123',
+  password: 'TestPassword123!',
 }
+
+beforeAll(() => {
+  mockCreateUser.mockResolvedValue({ webdavPassword: 'test-webdav-password' })
+})
 
 afterAll(async () => {
   await prisma.user.deleteMany({ where: { email: testUser.email } })

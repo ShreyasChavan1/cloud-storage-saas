@@ -12,6 +12,10 @@ export interface SubscriptionDTO {
   // see payment.service.ts's applyPlanChange and schema.prisma's own
   // comment on this column for why that's surfaced rather than hidden.
   quotaSyncedAt: string | null
+  // Phase 11B — true means a period-end cancellation is scheduled: the
+  // user keeps this plan/quota until renewalDate, then reconciliation
+  // reverts them to Free. See payment.service.ts's cancelSubscription.
+  cancelAtPeriodEnd: boolean
 }
 
 export function toSubscriptionDTO(subscription: SubscriptionWithPlan): SubscriptionDTO {
@@ -21,5 +25,6 @@ export function toSubscriptionDTO(subscription: SubscriptionWithPlan): Subscript
     plan: subscription.plan.name,
     renewalDate: subscription.renewalDate.toISOString(),
     quotaSyncedAt: subscription.quotaSyncedAt?.toISOString() ?? null,
+    cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,
   }
 }

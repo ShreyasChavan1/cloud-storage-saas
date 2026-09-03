@@ -1,11 +1,14 @@
-# Nimbus Backend — through Phase 11A (Backend Payments)
+# Nimbus Backend — through Phase 11B (Recurring Billing & Webhooks)
 
 Express + TypeScript API backing the Nimbus frontend. Started as auth-only
 (Phase 2) and has since grown real file storage over WebDAV (Phase 6), live
 quota/stats reporting for the dashboard (Phase 9), a role-protected admin
-surface for managing accounts (Phase 10), and now server-side Razorpay
-payments for upgrading/canceling a plan (Phase 11A) — see the phase-by-phase
-sections below for how each layer was added on top of the last.
+surface for managing accounts (Phase 10), server-side Razorpay payments for
+upgrading/canceling a plan (Phase 11A), and now the full recurring-billing
+lifecycle on top of that — webhooks, renewals, failed payments, refunds,
+period-end cancellation, and reconciliation (Phase 11B) — see the
+phase-by-phase sections below for how each layer was added on top of the
+last.
 
 ## Stack
 Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads) · Razorpay (payments)
@@ -356,14 +359,15 @@ agent's own admin credentials. `RAZORPAY_KEY_ID` is deliberately exposed
 client-side), returned from `create-order`'s response as `keyId`.
 
 **Signature verification is hand-computed, not the SDK's own helper.** The
-`razorpay` package exports `Razorpay.validateWebhookSignature`, but that
-covers a *different* flow — HMAC over a raw webhook request body, using a
-separate webhook secret this app doesn't even have configured. Checkout
-signature verification uses its own documented formula instead:
+`razorpay` package exports `Razorpay.validateWebhookSignature`, which covers
+a *different* flow from checkout verification — HMAC over a raw webhook
+request body, using a separate webhook secret (`RAZORPAY_WEBHOOK_SECRET`,
+configured as of Phase 11B — see that section below). Checkout signature
+verification uses its own documented formula instead:
 `hmac_sha256(orderId + "|" + paymentId, key_secret)`, computed with Node's
 own `crypto` and compared with `crypto.timingSafeEqual` (not `===`) — the
 same reasoning already applied to the provisioning agent's bearer token
-check.
+check, and to `RazorpayService.verifyWebhookSignature`'s own formula.
 
 **Every plan change — paid or free — goes through one shared function,**
 `payment.service.ts`'s `applyPlanChange`. It's what `verifyPayment` calls
@@ -380,8 +384,11 @@ upsert rather than accumulating a row per billing period. `Payment`
 already served as the append-only history (every attempt, successful or
 not, is its own permanent row); splitting "current state" from "history"
 across the two tables this way avoids needing period-boundary or
-supersession logic that a genuine subscription-ledger design would require
-— explicitly a Phase 11B ("recurring billing") concern, not this one.
+supersession logic that a genuine subscription-ledger design would
+require. This is also why Phase 11B's recurring billing (see below) never
+needed to become a ledger either — a "renewal" is still just the same
+`Subscription` row's `renewalDate` moving forward, exactly like the very
+first plan change did.
 
 **A Payment row is created exactly once, at `create-order` time — never
 by `verify-payment`.** This is the main thing that makes replayed/duplicate
@@ -413,23 +420,22 @@ is genuinely earned, and reverting it because Nextcloud was briefly
 unreachable would be the wrong failure mode. Instead,
 `Subscription.quotaSyncedAt` is left `null` as an honest, queryable marker,
 the failure is logged, and the API response includes `quotaSynced: false`
-so a caller (or a human reading logs) can tell. **No retry or
-reconciliation job exists to act on that marker** — building one is
-explicitly Phase 11B territory; this phase only leaves the marker for a
-future one to pick up.
+so a caller (or a human reading logs) can tell. As of Phase 11B, this
+marker is no longer just left for later: `reconciliation.service.ts`'s
+sweep retries every subscription still carrying a `null` here — see that
+section below.
 
 **`upgrade-plan` only ever accepts a $0 plan.** Any plan with `price > 0`
 is rejected with a message pointing at `create-order`/`verify-payment`
 instead — without that check, this endpoint would be a straightforward
 way to get a paid plan for free.
 
-**`cancel-subscription` takes effect immediately**, reverting to the
-default (`Free`) plan and syncing quota down right away, rather than
-"stays on the paid plan until the current period ends." The latter is a
-real, common pattern, but doing it correctly needs something to actually
-act on `renewalDate` once it arrives — a scheduled job, which is Phase
-11B's "recurring billing," not this phase's. Immediate-effect is the
-simplest complete behavior available without one.
+**`cancel-subscription` takes effect immediately by default**, reverting to
+the default (`Free`) plan and syncing quota down right away. As of Phase
+11B, passing `{ atPeriodEnd: true }` in the request body instead schedules
+the cancellation for the end of the current billing period rather than
+applying it right away — see that section below for how the two differ
+and when each fires.
 
 **Currency and amounts:** `RAZORPAY_CURRENCY` (default `INR`) decides the
 unit `Plan.price` gets converted into — Razorpay orders are created in the
@@ -437,6 +443,112 @@ smallest unit of that currency (paise for INR, cents for USD), computed as
 `round(price * 100)`. `Plan.price` itself has no currency field of its own
 (this app has only ever shown a bare `$` in `Pricing.tsx`), so this makes
 that assumption explicit and overridable rather than silently picking one.
+
+## Recurring billing & webhooks (Phase 11B)
+Builds on Phase 11A's payment primitives without redesigning them —
+`applyPlanChange` is still the one function every plan change goes
+through, `Payment` is still the append-only ledger, `Subscription` is
+still one row per user. This phase adds the asynchronous, recurring, and
+failure-handling machinery Phase 11A explicitly deferred.
+
+**`POST /api/webhooks/razorpay`** is the new surface — no `requireAuth`,
+since Razorpay itself is the caller. Authenticated instead by
+`X-Razorpay-Signature`, verified in `RazorpayService.verifyWebhookSignature`
+against `RAZORPAY_WEBHOOK_SECRET` (a separate secret from
+`RAZORPAY_KEY_SECRET`, configured in the Razorpay dashboard's Webhooks
+section — subscribe at least `payment.captured`, `payment.failed`,
+`refund.created`, `refund.processed`). Subscribe this URL to those events
+for the lifecycle below to actually run.
+
+**The route is mounted with `express.raw()`, ahead of the app-wide
+`express.json()`, in `app.ts`.** Razorpay's webhook signature is computed
+over the *exact* raw request bytes; letting `express.json()` parse the
+body first and re-serializing it later isn't guaranteed to reproduce those
+bytes (key order, whitespace, number formatting can all differ), which
+would silently break verification. Every other route still gets the
+parsed JSON body as before.
+
+**Webhook processing is fully idempotent, at two layers:**
+- **Transport level:** every delivery is recorded in a new `WebhookEvent`
+  row, keyed by a SHA-256 hash of the exact raw body — not any field
+  inside the payload itself, since Razorpay's payloads don't reliably
+  carry a single unique event id across every event type. A delivery
+  whose hash is already marked `PROCESSED` is skipped outright. One left
+  at `RECEIVED` (a previous attempt crashed mid-processing) is retried.
+- **Domain level:** the handlers underneath are themselves idempotent
+  regardless of how far a previous attempt got —
+  `paymentService.confirmPayment` (the webhook counterpart to Phase 11A's
+  `verifyPayment`) short-circuits an already-`SUCCEEDED` payment exactly
+  the way `verifyPayment` does; refund handling short-circuits an
+  already-`REFUNDED` payment; a failed-payment notification for something
+  already resolved is logged and ignored rather than acted on twice.
+
+**`payment.captured` → `paymentService.confirmPayment`.** A new,
+independent top-level flow (not a refactor of `verifyPayment`) that shares
+`applyPlanChange` but skips checkout-signature verification (not
+applicable to webhook payloads) and has no `userId` to check ownership
+against (Razorpay isn't a logged-in user). Kept separate specifically so
+`verifyPayment`'s already-tested Phase 11A behavior isn't disturbed by
+webhook concerns it was never written to handle. This is also what makes
+webhooks a genuine second confirmation path, not just an echo of
+`verify-payment`: if a client never calls `verify-payment` at all (closed
+tab, crashed app), the webhook alone is enough to confirm the payment and
+apply the plan change.
+
+**Subscription renewal is just repurchasing the same plan again**, not a
+new concept — `createOrder`'s Phase 11A guard against repurchasing an
+already-active plan now has a `RENEWAL_WINDOW_DAYS`-wide exception: within
+that many days of `renewalDate` (or any time after it's already passed),
+buying the plan you're already on is treated as a renewal rather than
+rejected, and goes through the exact same `create-order` →
+`verify-payment`/webhook flow as any other purchase — `applyPlanChange`'s
+upsert extends `renewalDate` either way.
+
+**`payment.failed` on a renewal → `Subscription.status = 'PAST_DUE'`.**
+Only when the failed payment's plan matches the plan the user's currently-
+`ACTIVE` subscription is actually on — a failed attempt to switch to a
+*different* plan doesn't disturb whatever plan they're already
+successfully on. `PAST_DUE` and `EXPIRED` both existed in `SubscriptionStatus`
+since Phase 3/11A's schema but were never written to until this phase.
+
+**`refund.created`/`refund.processed` → `Payment.status = 'REFUNDED'`,
+and — if that payment is the one actually funding the user's *current*
+subscription — reverts them to Free.** Refunding an old, already-superseded
+payment (they upgraded again since) doesn't touch what they're on now. The
+downgrade itself reuses `cancelSubscription`'s immediate-effect path
+directly, rather than a third copy of "revert to Free."
+
+**Cancellation at period end:** `cancel-subscription` now accepts
+`{ atPeriodEnd: true }` in its body (defaulting to `false`, so every
+existing caller keeps Phase 11A's immediate-effect behavior unchanged).
+`true` sets `Subscription.cancelAtPeriodEnd` and changes nothing else —
+same plan, same quota — until reconciliation (below) sees `renewalDate`
+has passed and reverts them to Free then.
+
+**Reconciliation (`reconciliation.service.ts`) is what actually acts on
+`renewalDate`, `PAST_DUE`, and `quotaSyncedAt: null`** — three things the
+rest of this system only ever leaves as markers. Exposed as
+`POST /api/admin/reconcile-subscriptions` (admin-only) rather than run on
+an in-process schedule: no scheduler dependency (e.g. `node-cron`) was
+added, since an HTTP-triggered sweep is trivially schedulable from outside
+(cron, a platform's own scheduled-job feature) without one. Each run:
+1. **Due-for-renewal sweep:** `ACTIVE` subscriptions past `renewalDate`.
+   `cancelAtPeriodEnd` ones revert to Free (via `cancelSubscription`,
+   status `CANCELED`). Paid plans with no renewal payment recorded are
+   marked `PAST_DUE` — a grace window, not an immediate downgrade. Free
+   ($0) plans reaching their own `renewalDate` need no action.
+2. **Grace-window sweep:** `PAST_DUE` subscriptions whose grace window
+   (`PAST_DUE_GRACE_DAYS`) has itself elapsed with still no renewal
+   payment are downgraded to Free via `expireSubscriptionToFree` — status
+   `EXPIRED`, deliberately distinct from user-initiated `CANCELED`.
+3. **Quota-sync retry sweep:** every subscription still carrying
+   `quotaSyncedAt: null` gets its Nextcloud quota update retried.
+
+**Every terminal state reuses `applyPlanChange`.** `cancelSubscription`
+(immediate), `expireSubscriptionToFree`, and `confirmPayment` all funnel
+through it, same as Phase 11A's `verifyPayment`/`upgradePlan` did —
+Phase 11B adds new *callers* and new *statuses* (`EXPIRED`), never a
+second way of changing a plan.
 
 ## Known gap: password reset is not end-to-end yet
 `POST /api/auth/forgot-password` generates a reset token, stores its hash in

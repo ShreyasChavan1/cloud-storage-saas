@@ -65,6 +65,13 @@ const envSchema = z.object({
   // this makes the assumption explicit and overridable rather than
   // silently hardcoding one or the other.
   RAZORPAY_CURRENCY: z.string().default('INR'),
+  // Phase 11B — configured separately in the Razorpay dashboard's Webhooks
+  // section, deliberately NOT the same value as RAZORPAY_KEY_SECRET. Used
+  // only by RazorpayService.verifyWebhookSignature to check the
+  // `X-Razorpay-Signature` header against the raw request body; see that
+  // method's own comment for why this can't reuse the checkout-signature
+  // formula/secret above.
+  RAZORPAY_WEBHOOK_SECRET: z.string().min(16, 'RAZORPAY_WEBHOOK_SECRET must be at least 16 characters'),
 })
 
 const parsed = envSchema.safeParse(process.env)

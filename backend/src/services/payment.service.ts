@@ -11,7 +11,7 @@ import { toSubscriptionDTO, SubscriptionDTO, SubscriptionWithPlan } from '../mod
 import { ApiError } from '../utils/ApiError'
 import { logger } from '../config/logger'
 import { env } from '../config/env'
-import { DEFAULT_PLAN_NAME, SUBSCRIPTION_PERIOD_DAYS } from '../config/plans'
+import { DEFAULT_PLAN_NAME, SUBSCRIPTION_PERIOD_DAYS, RENEWAL_WINDOW_DAYS } from '../config/plans'
 import { Plan } from '@prisma/client'
 import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput } from '../validators/payment.validator'
 
@@ -37,7 +37,7 @@ function renewalDateFromNow(): Date {
 async function applyPlanChange(
   userId: string,
   plan: Plan,
-  status: 'ACTIVE' | 'CANCELED'
+  status: 'ACTIVE' | 'CANCELED' | 'EXPIRED'
 ): Promise<{ subscription: SubscriptionWithPlan; quotaSynced: boolean }> {
   const user = await userRepository.findById(userId)
   if (!user) throw ApiError.notFound('User not found')
@@ -48,6 +48,11 @@ async function applyPlanChange(
   // "not yet confirmed synced" until this function's own Nextcloud call
   // (if any) actually succeeds, never inheriting a previous plan's sync
   // timestamp.
+  //
+  // cancelAtPeriodEnd: false on every change (Phase 11B) — any previously
+  // scheduled period-end cancellation is implicitly abandoned the moment
+  // the user's plan actually changes again, whatever caused that change
+  // (a fresh purchase, a renewal, an admin-driven free downgrade, ...).
   //
   // Uses prisma.$transaction's interactive-callback form, talking to `tx`
   // directly rather than through subscriptionRepository/userRepository —
@@ -63,8 +68,8 @@ async function applyPlanChange(
   const subscription = await prisma.$transaction(async (tx) => {
     const sub = await tx.subscription.upsert({
       where: { userId },
-      create: { userId, planId: plan.id, status, renewalDate, quotaSyncedAt: null },
-      update: { planId: plan.id, status, renewalDate, quotaSyncedAt: null },
+      create: { userId, planId: plan.id, status, renewalDate, quotaSyncedAt: null, cancelAtPeriodEnd: false },
+      update: { planId: plan.id, status, renewalDate, quotaSyncedAt: null, cancelAtPeriodEnd: false },
       include: { plan: true },
     })
     await tx.user.update({ where: { id: userId }, data: { planId: plan.id } })
@@ -115,7 +120,20 @@ export const paymentService = {
 
     const current = await subscriptionRepository.findByUserId(userId)
     if (current && current.planId === plan.id && current.status === 'ACTIVE') {
-      throw ApiError.badRequest('You are already on this plan')
+      // Phase 11B: repurchasing the plan you're already on is only
+      // rejected outright while you're well inside your current billing
+      // period. Inside RENEWAL_WINDOW_DAYS of renewalDate (or past it
+      // entirely — e.g. a PAST_DUE-bound subscription the user gets to
+      // before reconciliation.service.ts's grace window runs out), it's
+      // legitimately a renewal purchase: fall through and let it create a
+      // new order the same as any other plan change, which verifyPayment/
+      // confirmPayment's applyPlanChange call will extend renewalDate by.
+      const renewalWindowStart = new Date(
+        current.renewalDate.getTime() - RENEWAL_WINDOW_DAYS * 24 * 60 * 60 * 1000
+      )
+      if (new Date() < renewalWindowStart) {
+        throw ApiError.badRequest('You are already on this plan')
+      }
     }
 
     // Smallest currency unit (paise for INR, cents for USD, ...) — Plan
@@ -234,6 +252,74 @@ export const paymentService = {
     return { payment: toPaymentDTO(succeededPayment), subscription: toSubscriptionDTO(subscription), quotaSynced }
   },
 
+  // Phase 11B — the webhook counterpart to verifyPayment above, used by
+  // webhook.service.ts's `payment.captured` handler. Deliberately a
+  // separate, independent flow rather than a refactor of verifyPayment to
+  // share code: webhook deliveries have no userId to check ownership
+  // against (Razorpay isn't a logged-in user) and no checkout-callback
+  // signature to verify (that's verifyPaymentSignature's separate formula
+  // — the webhook's own signature is already verified by
+  // webhook.service.ts before this is ever called, over the raw request
+  // body, via razorpayService.verifyWebhookSignature). What IS shared is
+  // the one thing that actually matters for consistency: applyPlanChange.
+  //
+  // Exists as its own top-level flow specifically so verifyPayment's
+  // already-tested behavior (its exact error codes/messages for a
+  // not-PENDING order, its userId ownership check, etc.) isn't disturbed
+  // by webhook concerns it was never written to handle.
+  //
+  // Returns null if providerOrderId doesn't match any Payment this
+  // backend created (e.g. a Razorpay order made directly in the dashboard,
+  // never touching create-order) — the caller decides how to log that, it
+  // isn't this function's error to throw.
+  async confirmPayment(
+    providerOrderId: string,
+    providerPaymentId: string
+  ): Promise<{ payment: PaymentDTO; subscription: SubscriptionDTO; quotaSynced: boolean } | null> {
+    const payment = await paymentRepository.findByProviderOrderId(providerOrderId)
+    if (!payment) return null
+
+    // Idempotent for the same reason verifyPayment's own SUCCEEDED
+    // short-circuit is: a webhook can be (and per Razorpay's own retry
+    // policy, will be) delivered more than once for the same event, and
+    // verify-payment may well have already confirmed this exact payment
+    // via the checkout callback before the webhook even arrives.
+    if (payment.status === 'SUCCEEDED') {
+      const subscription = await subscriptionRepository.findByUserId(payment.userId)
+      if (!subscription) {
+        throw ApiError.internal('Payment was verified but no subscription exists for this user')
+      }
+      return {
+        payment: toPaymentDTO(payment),
+        subscription: toSubscriptionDTO(subscription),
+        quotaSynced: !!subscription.quotaSyncedAt,
+      }
+    }
+
+    if (payment.status !== 'PENDING') {
+      // Already FAILED or REFUNDED — a payment.captured delivery arriving
+      // after that is a genuine conflict (a race with a payment.failed/
+      // refund webhook, most likely), not something to silently resurrect.
+      // 409, not 400: nothing about *this* webhook call is malformed, the
+      // resource it refers to has just already moved on.
+      throw ApiError.conflict(`Cannot confirm payment already marked ${payment.status.toLowerCase()}`)
+    }
+
+    if (!payment.planId) {
+      throw ApiError.internal('This payment has no associated plan')
+    }
+    const plan = await planRepository.findById(payment.planId)
+    if (!plan) throw ApiError.internal('The plan for this payment no longer exists')
+
+    const { subscription, quotaSynced } = await applyPlanChange(payment.userId, plan, 'ACTIVE')
+    const succeededPayment = await paymentRepository.markSucceeded(payment.id, {
+      providerPaymentId,
+      subscriptionId: subscription.id,
+    })
+
+    return { payment: toPaymentDTO(succeededPayment), subscription: toSubscriptionDTO(subscription), quotaSynced }
+  },
+
   // The no-payment path — a plan with no cost, so there's nothing for
   // Razorpay to do at all. Rejects any plan with a real price so this
   // can't be used to bypass create-order/verify-payment for a paid plan.
@@ -258,17 +344,31 @@ export const paymentService = {
     return { subscription: toSubscriptionDTO(subscription), quotaSynced }
   },
 
-  // Immediate-effect cancellation: reverts to the Free plan right away
-  // rather than "stays paid until the current period ends." The latter
-  // is a real, common billing pattern, but implementing it correctly
-  // needs something to actually act on renewalDate once it arrives — a
-  // scheduled job, which is explicitly Phase 11B ("recurring billing")
-  // territory this phase doesn't build. Immediate-effect is the simplest
-  // complete behavior available without one.
-  async cancelSubscription(userId: string): Promise<{ subscription: SubscriptionDTO; quotaSynced: boolean }> {
+  // Immediate-effect by default: reverts to the Free plan right away.
+  // Phase 11B adds the other real, common pattern — `atPeriodEnd: true`
+  // keeps the user on their current plan/quota until renewalDate, and
+  // schedules the actual downgrade for reconciliation.service.ts's sweep
+  // to carry out once that date arrives. The immediate-effect branch below
+  // is otherwise byte-for-byte what Phase 11A shipped — every existing
+  // caller that doesn't pass `options` gets exactly the old behavior.
+  async cancelSubscription(
+    userId: string,
+    options: { atPeriodEnd?: boolean } = {}
+  ): Promise<{ subscription: SubscriptionDTO; quotaSynced: boolean }> {
     const current = await subscriptionRepository.findByUserId(userId)
     if (!current || current.status === 'CANCELED') {
       throw ApiError.badRequest('No active subscription to cancel')
+    }
+
+    if (options.atPeriodEnd) {
+      if (current.cancelAtPeriodEnd) {
+        throw ApiError.badRequest('Cancellation is already scheduled for the end of the current billing period')
+      }
+      // No plan/quota change at all here — that's the whole point of
+      // "at period end." Just flips the marker reconciliation.service.ts's
+      // sweep acts on once renewalDate actually arrives.
+      const updated = await subscriptionRepository.setCancelAtPeriodEnd(current.id, true)
+      return { subscription: toSubscriptionDTO(updated), quotaSynced: !!updated.quotaSyncedAt }
     }
 
     const freePlan = await planRepository.findByName(DEFAULT_PLAN_NAME)
@@ -277,6 +377,24 @@ export const paymentService = {
     }
 
     const { subscription, quotaSynced } = await applyPlanChange(userId, freePlan, 'CANCELED')
+    return { subscription: toSubscriptionDTO(subscription), quotaSynced }
+  },
+
+  // Phase 11B — used only by reconciliation.service.ts, when a PAST_DUE
+  // subscription's grace window (PAST_DUE_GRACE_DAYS) elapses with no
+  // renewal payment ever landing. Deliberately NOT the same code path as
+  // cancelSubscription's immediate-effect branch even though both end up
+  // downgrading to Free: this is an involuntary lapse (status EXPIRED),
+  // that's a user's own choice (status CANCELED) — keeping them distinct
+  // in Subscription.status is the entire reason schema.prisma already had
+  // both values sitting unused since Phase 11A.
+  async expireSubscriptionToFree(userId: string): Promise<{ subscription: SubscriptionDTO; quotaSynced: boolean }> {
+    const freePlan = await planRepository.findByName(DEFAULT_PLAN_NAME)
+    if (!freePlan) {
+      throw ApiError.internal(`Default plan "${DEFAULT_PLAN_NAME}" not found. Run "npm run prisma:seed".`)
+    }
+
+    const { subscription, quotaSynced } = await applyPlanChange(userId, freePlan, 'EXPIRED')
     return { subscription: toSubscriptionDTO(subscription), quotaSynced }
   },
 }

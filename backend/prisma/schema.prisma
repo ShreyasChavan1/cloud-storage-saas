@@ -1,4 +1,4 @@
-// Prisma schema — Nimbus backend (through Phase 11A: backend payments)
+// Prisma schema — Nimbus backend (through Phase 11B: recurring billing & webhooks)
 // Run `npm run prisma:migrate` after setting DATABASE_URL in .env,
 // then `npm run prisma:seed` to load the default plans (and, if
 // ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD are set, a bootstrap admin — see
@@ -119,12 +119,21 @@ model Subscription {
 
   // Set only once the Nextcloud quota update for this plan actually
   // succeeds (see payment.service.ts's applyPlanChange) — left null if
-  // that call fails after the plan change was already committed. This is
-  // deliberately just a marker for Phase 11B reconciliation to pick up
-  // later, not a retry mechanism in itself (none exists yet — see
-  // backend/README.md's Phase 11A section for why that's out of scope
-  // here).
+  // that call fails after the plan change was already committed. Acted on
+  // by reconciliation.service.ts (Phase 11B), which retries the sync for
+  // every subscription still carrying a null here.
   quotaSyncedAt DateTime? @map("quota_synced_at")
+
+  // Phase 11B ("cancel at period end"): true means the user asked to
+  // cancel but keeps their current plan/quota until `renewalDate`
+  // arrives, at which point reconciliation.service.ts's sweep reverts them
+  // to Free (see payment.service.ts's cancelSubscription for the
+  // immediate-effect alternative, which never touches this flag at all
+  // since there's nothing left to schedule). Reset to false by
+  // applyPlanChange on every plan change — any previously scheduled
+  // cancellation is implicitly abandoned the moment the user buys/switches
+  // to a plan again.
+  cancelAtPeriodEnd Boolean @default(false) @map("cancel_at_period_end")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -134,6 +143,37 @@ model Subscription {
   payments Payment[]
 
   @@map("subscriptions")
+}
+
+// Phase 11B: one row per Razorpay webhook delivery, keyed by a hash of the
+// exact raw request body rather than trusting any single field inside the
+// payload itself to be a reliable unique event id across every event type
+// Razorpay sends. This is what makes webhook processing fully idempotent
+// at the transport level — see webhook.service.ts — layered on top of the
+// fact that the actual handlers underneath (paymentService.confirmPayment,
+// paymentRepository.markRefunded, etc.) are themselves idempotent by
+// construction, the same way verify-payment already was in Phase 11A.
+model WebhookEvent {
+  id        String             @id
+  eventType String             @map("event_type")
+  status    WebhookEventStatus @default(RECEIVED)
+  // The full decoded payload, kept for audit/reconciliation/debugging —
+  // Json rather than a typed column since the shape varies per eventType
+  // and Razorpay can (and does) add fields over time without notice.
+  payload Json
+
+  error       String?
+  processedAt DateTime? @map("processed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  @@index([eventType])
+  @@map("webhook_events")
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSED
+  FAILED
 }
 
 model Payment {
