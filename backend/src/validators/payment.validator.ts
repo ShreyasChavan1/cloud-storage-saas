@@ -46,7 +46,22 @@ export const cancelSubscriptionSchema = z.object({
     .default({}),
 })
 
+
+export const createSubscriptionSchema = z.object({
+  body: z.object({ planId: uuidField }),
+})
+
+export const verifySubscriptionSchema = z.object({
+  body: z.object({
+    razorpaySubscriptionId: z.string().min(1),
+    razorpayPaymentId: z.string().min(1),
+    razorpaySignature: z.string().min(1),
+  }),
+})
+
 export type CreateOrderInput = z.infer<typeof createOrderSchema>['body']
 export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>['body']
 export type UpgradePlanInput = z.infer<typeof upgradePlanSchema>['body']
 export type CancelSubscriptionInput = z.infer<typeof cancelSubscriptionSchema>['body']
+export type CreateSubscriptionInput = z.infer<typeof createSubscriptionSchema>['body']
+export type VerifySubscriptionInput = z.infer<typeof verifySubscriptionSchema>['body']

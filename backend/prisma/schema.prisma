@@ -31,10 +31,24 @@ enum UserStatus {
 }
 
 enum SubscriptionStatus {
+  PENDING
   ACTIVE
   CANCELED
   PAST_DUE
   TRIALING
+  EXPIRED
+}
+
+
+
+enum BillingSubscriptionStatus {
+  CREATED
+  AUTHENTICATED
+  ACTIVE
+  PENDING
+  HALTED
+  CANCELLED
+  COMPLETED
   EXPIRED
 }
 
@@ -77,6 +91,7 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   subscriptions       Subscription[]
+  billingSubscriptions BillingSubscription[]
   payments            Payment[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
@@ -92,8 +107,9 @@ model Plan {
   price        Decimal @db.Decimal(10, 2)
 
   users         User[]
-  subscriptions Subscription[]
-  payments      Payment[]
+  subscriptions       Subscription[]
+  billingSubscriptions BillingSubscription[]
+  payments            Payment[]
 
   @@map("plans")
 }
@@ -142,7 +158,37 @@ model Subscription {
   // a payment's own subscriptionId later goes null (see Payment.subscription).
   payments Payment[]
 
+  // Razorpay mandate/subscription that currently backs this entitlement.
+  // The provider subscription is kept separately so a new mandate can be
+  // created during a plan change without temporarily overwriting the
+  // user's current entitlement row.
+  billingSubscriptions BillingSubscription[]
+
   @@map("subscriptions")
+}
+
+model BillingSubscription {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  planId String @map("plan_id")
+  plan Plan @relation(fields: [planId], references: [id])
+
+  razorpaySubscriptionId String @unique @map("razorpay_subscription_id")
+  status BillingSubscriptionStatus @default(CREATED)
+  currentStart DateTime? @map("current_start")
+  currentEnd DateTime? @map("current_end")
+  chargeAt DateTime? @map("charge_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  subscriptionId String? @map("subscription_id")
+  subscription Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+  payments Payment[]
+
+  @@index([userId])
+  @@index([planId])
+  @@map("billing_subscriptions")
 }
 
 // Phase 11B: one row per Razorpay webhook delivery, keyed by a hash of the
@@ -194,6 +240,9 @@ model Payment {
   subscriptionId String?       @map("subscription_id")
   subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
 
+  billingSubscriptionId String? @map("billing_subscription_id")
+  billingSubscription BillingSubscription? @relation(fields: [billingSubscriptionId], references: [id], onDelete: SetNull)
+
   // Which plan this payment was FOR — set at order-creation time (Phase
   // 11A), before subscriptionId can be known (the subscription doesn't
   // get created/updated until the payment is actually verified). SetNull
@@ -224,6 +273,7 @@ model Payment {
 
   @@index([userId])
   @@index([subscriptionId])
+  @@index([billingSubscriptionId])
   @@index([planId])
   @@map("payments")
 }

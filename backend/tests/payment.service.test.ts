@@ -49,13 +49,37 @@ jest.mock('../src/repositories/subscription.repository', () => ({
   },
 }))
 
+const mockBillingFindById = jest.fn()
+const mockBillingCreate = jest.fn()
+const mockBillingFindByRazorpaySubscriptionId = jest.fn()
+const mockBillingFindByUserId = jest.fn()
+const mockBillingFindActiveForUser = jest.fn()
+const mockBillingFindForUserPlan = jest.fn()
+const mockBillingUpdateStatus = jest.fn()
+const mockBillingAttachLocalSubscription = jest.fn()
+jest.mock('../src/repositories/billingSubscription.repository', () => ({
+  billingSubscriptionRepository: {
+    findById: mockBillingFindById,
+    create: mockBillingCreate,
+    findByRazorpaySubscriptionId: mockBillingFindByRazorpaySubscriptionId,
+    findByUserId: mockBillingFindByUserId,
+    findActiveForUser: mockBillingFindActiveForUser,
+    findForUserPlan: mockBillingFindForUserPlan,
+    updateStatus: mockBillingUpdateStatus,
+    attachLocalSubscription: mockBillingAttachLocalSubscription,
+  },
+}))
+
 const mockVerifyPaymentSignature = jest.fn()
 const mockCreateOrder = jest.fn()
+const mockCreateSubscription = jest.fn()
+const mockVerifySubscriptionSignature = jest.fn()
+const mockCancelSubscription = jest.fn()
 jest.mock('../src/services/RazorpayService', () => {
   const actual = jest.requireActual('../src/services/RazorpayService')
   return {
     ...actual,
-    razorpayService: { keyId: 'rzp_test_key', verifyPaymentSignature: mockVerifyPaymentSignature, createOrder: mockCreateOrder },
+    razorpayService: { keyId: 'rzp_test_key', verifyPaymentSignature: mockVerifyPaymentSignature, createOrder: mockCreateOrder, createSubscription: mockCreateSubscription, verifySubscriptionSignature: mockVerifySubscriptionSignature, cancelSubscription: mockCancelSubscription },
   }
 })
 
@@ -118,6 +142,13 @@ beforeEach(() => {
     subscriptionRow({ planId: args.create.planId, status: args.create.status })
   )
   mockTxUserUpdate.mockResolvedValue(undefined)
+  mockBillingFindById.mockResolvedValue(null)
+  mockBillingFindByRazorpaySubscriptionId.mockResolvedValue(null)
+  mockBillingFindByUserId.mockResolvedValue([])
+  mockBillingFindActiveForUser.mockResolvedValue(null)
+  mockBillingFindForUserPlan.mockResolvedValue(null)
+  mockBillingUpdateStatus.mockResolvedValue(undefined)
+  mockBillingAttachLocalSubscription.mockResolvedValue(undefined)
 })
 
 describe('paymentService.createOrder', () => {

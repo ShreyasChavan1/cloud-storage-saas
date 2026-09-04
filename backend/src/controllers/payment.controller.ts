@@ -2,9 +2,22 @@ import { Request, Response } from 'express'
 import { paymentService } from '../services/payment.service'
 import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
-import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput, CancelSubscriptionInput } from '../validators/payment.validator'
+import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput, CancelSubscriptionInput, CreateSubscriptionInput, VerifySubscriptionInput } from '../validators/payment.validator'
 
 export const paymentController = {
+  listPlans: asyncHandler(async (_req: Request, res: Response) => {
+    const plans = await paymentService.listPlans()
+    return sendSuccess(res, { plans })
+  }),
+  createSubscription: asyncHandler(async (req: Request, res: Response) => {
+    const result = await paymentService.createSubscription(req.user!.sub, req.body as CreateSubscriptionInput)
+    return sendSuccess(res, result)
+  }),
+
+  verifySubscription: asyncHandler(async (req: Request, res: Response) => {
+    const result = await paymentService.verifySubscription(req.user!.sub, req.body as VerifySubscriptionInput)
+    return sendSuccess(res, result)
+  }),
   createOrder: asyncHandler(async (req: Request, res: Response) => {
     const result = await paymentService.createOrder(req.user!.sub, req.body as CreateOrderInput)
     return sendSuccess(res, result)

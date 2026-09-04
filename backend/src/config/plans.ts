@@ -25,3 +25,7 @@ export const RENEWAL_WINDOW_DAYS = 7
 // rather than an immediate downgrade so a renewal payment made a day or
 // two late still lands on an unchanged plan.
 export const PAST_DUE_GRACE_DAYS = 3
+
+// Razorpay Subscriptions require a finite total_count. 1200 monthly cycles
+// is the documented 100-year maximum, effectively indefinite for Nimbus.
+export const RAZORPAY_SUBSCRIPTION_TOTAL_COUNT = 1200

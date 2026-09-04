@@ -72,6 +72,9 @@ const envSchema = z.object({
   // method's own comment for why this can't reuse the checkout-signature
   // formula/secret above.
   RAZORPAY_WEBHOOK_SECRET: z.string().min(16, 'RAZORPAY_WEBHOOK_SECRET must be at least 16 characters'),
+  // Razorpay Subscriptions Plan IDs. Create these once in Razorpay Dashboard/API.
+  RAZORPAY_PLAN_BASIC_ID: z.string().optional(),
+  RAZORPAY_PLAN_PRO_ID: z.string().optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

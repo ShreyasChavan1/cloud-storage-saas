@@ -24,10 +24,14 @@ export const paymentRepository = {
     planId: string
     amount: Prisma.Decimal | number
     provider: string
-    providerOrderId: string
+    providerOrderId?: string
+    providerPaymentId?: string
+    subscriptionId?: string
+    billingSubscriptionId?: string
+    status?: 'PENDING' | 'SUCCEEDED' | 'FAILED' | 'REFUNDED'
   }) {
     return prisma.payment.create({
-      data: { ...data, status: 'PENDING' },
+      data: { ...data, status: data.status ?? 'PENDING' },
     })
   },
 
@@ -40,6 +44,10 @@ export const paymentRepository = {
   // the payment id, not the order id.
   findByProviderPaymentId(providerPaymentId: string) {
     return prisma.payment.findUnique({ where: { providerPaymentId } })
+  },
+
+  createSucceeded(data: { userId: string; planId: string; amount: Prisma.Decimal | number; provider: string; providerPaymentId: string; subscriptionId: string; billingSubscriptionId: string }) {
+    return prisma.payment.create({ data: { ...data, status: 'SUCCEEDED' } })
   },
 
   markSucceeded(id: string, params: { providerPaymentId: string; subscriptionId: string }) {

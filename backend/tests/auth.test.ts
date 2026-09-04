@@ -16,9 +16,7 @@ jest.mock('../src/services/NextcloudService', () => {
 import { createApp } from '../src/app'
 import { prisma } from '../src/database/prisma'
 
-// This suite uses a real Postgres database. The first Prisma query can be slow
-// when the test database/serverless connection is cold, so allow enough time
-// for the integration test without depending on remote Nextcloud latency.
+// This is a real Postgres integration suite; allow for a cold database connection.
 jest.setTimeout(30000)
 
 // These tests hit a real Postgres database via Prisma — point DATABASE_URL

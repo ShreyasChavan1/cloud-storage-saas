@@ -122,4 +122,67 @@ export const razorpayService = {
     if (expected.length !== provided.length) return false
     return crypto.timingSafeEqual(expected, provided)
   },
+
+  verifySubscriptionSignature(params: { paymentId: string; subscriptionId: string; signature: string }): boolean {
+    const expectedHex = crypto
+      .createHmac('sha256', env.RAZORPAY_KEY_SECRET)
+      .update(`${params.paymentId}|${params.subscriptionId}`)
+      .digest('hex')
+    const expected = Buffer.from(expectedHex, 'hex')
+    const provided = Buffer.from(params.signature, 'hex')
+    if (expected.length !== provided.length) return false
+    return crypto.timingSafeEqual(expected, provided)
+  },
+
+  async createSubscription(params: {
+    planId: string
+    totalCount: number
+    quantity?: number
+    customerNotify?: boolean
+    notes?: Record<string, string>
+  }): Promise<{ id: string; status: string; shortUrl: string | null; chargeAt: number | null; currentEnd: number | null }> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    let res: Response
+    try {
+      res = await fetch('https://api.razorpay.com/v1/subscriptions', {
+        method: 'POST',
+        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan_id: params.planId,
+          total_count: params.totalCount,
+          quantity: params.quantity ?? 1,
+          customer_notify: params.customerNotify ?? true,
+          notes: params.notes,
+        }),
+      })
+    } catch (err) {
+      throw new RazorpayApiError('Could not reach Razorpay Subscriptions API', err)
+    }
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+      throw new RazorpayApiError(`Could not create Razorpay subscription (${detail})`)
+    }
+    const body = await res.json() as any
+    return { id: body.id, status: body.status, shortUrl: body.short_url ?? null, chargeAt: body.charge_at ?? null, currentEnd: body.current_end ?? null }
+  },
+
+  async cancelSubscription(razorpaySubscriptionId: string, atCycleEnd: boolean): Promise<void> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    let res: Response
+    try {
+      res = await fetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(razorpaySubscriptionId)}/cancel`, {
+        method: 'POST',
+        headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ cancel_at_cycle_end: atCycleEnd }),
+      })
+    } catch (err) {
+      throw new RazorpayApiError('Could not reach Razorpay Subscriptions API', err)
+    }
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+      throw new RazorpayApiError(`Could not cancel Razorpay subscription (${detail})`)
+    }
+  },
 }

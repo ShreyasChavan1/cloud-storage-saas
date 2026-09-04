@@ -4,7 +4,7 @@ export type SubscriptionWithPlan = Subscription & { plan: Prisma.PlanGetPayload<
 
 export interface SubscriptionDTO {
   id: string
-  status: 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'TRIALING' | 'EXPIRED'
+  status: 'PENDING' | 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'TRIALING' | 'EXPIRED'
   plan: string
   renewalDate: string
   // Null means the plan/subscription change itself succeeded but the

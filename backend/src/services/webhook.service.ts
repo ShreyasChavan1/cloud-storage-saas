@@ -24,6 +24,8 @@ interface RazorpayPaymentEntity {
   id: string
   order_id: string
   status: string
+  amount?: number
+  invoice_id?: string
 }
 
 interface RazorpayRefundEntity {
@@ -32,11 +34,20 @@ interface RazorpayRefundEntity {
   status: string
 }
 
+interface RazorpaySubscriptionEntity {
+  id: string
+  status: string
+  current_start?: number | null
+  current_end?: number | null
+  charge_at?: number | null
+}
+
 interface RazorpayWebhookPayload {
   event: string
   payload: {
     payment?: { entity: RazorpayPaymentEntity }
     refund?: { entity: RazorpayRefundEntity }
+    subscription?: { entity: RazorpaySubscriptionEntity }
   }
 }
 
@@ -128,11 +139,25 @@ async function dispatch(evt: RazorpayWebhookPayload): Promise<void> {
       return
     case 'refund.failed':
       // The refund attempt itself failed at Razorpay's end — the payment
-      // stays SUCCEEDED on our side, there's nothing to reconcile. Worth
-      // a human eventually seeing (WebhookEvent keeps the full payload),
-      // but not worth this handler doing anything about automatically.
+      // stays SUCCEEDED on our side, there's nothing to reconcile.
       logger.warn({ event: evt.event }, 'Razorpay refund attempt failed — no local state change')
       return
+    case 'subscription.authenticated':
+      return handleSubscriptionStatus(evt, 'AUTHENTICATED')
+    case 'subscription.activated':
+      return handleSubscriptionStatus(evt, 'ACTIVE')
+    case 'subscription.pending':
+      return handleSubscriptionStatus(evt, 'PENDING')
+    case 'subscription.halted':
+      return handleSubscriptionStatus(evt, 'HALTED')
+    case 'subscription.cancelled':
+      return handleSubscriptionStatus(evt, 'CANCELLED')
+    case 'subscription.completed':
+      return handleSubscriptionStatus(evt, 'COMPLETED')
+    case 'subscription.expired':
+      return handleSubscriptionStatus(evt, 'EXPIRED')
+    case 'subscription.charged':
+      return handleSubscriptionCharged(evt)
     default:
       logger.info({ eventType: evt.event }, 'Unhandled Razorpay webhook event type — recorded, no action taken')
   }
@@ -264,4 +289,45 @@ async function handleRefund(evt: RazorpayWebhookPayload): Promise<void> {
     { userId: payment.userId, quotaSynced },
     `Payment refunded — subscription reverted to ${DEFAULT_PLAN_NAME} plan`
   )
+}
+
+
+async function handleSubscriptionStatus(
+  evt: RazorpayWebhookPayload,
+  status: 'AUTHENTICATED' | 'ACTIVE' | 'PENDING' | 'HALTED' | 'CANCELLED' | 'COMPLETED' | 'EXPIRED'
+): Promise<void> {
+  const entity = evt.payload.subscription?.entity
+  if (!entity) {
+    logger.warn({ event: evt.event }, 'subscription webhook missing subscription entity — ignoring')
+    return
+  }
+  await paymentService.markBillingSubscriptionStatus(
+    entity.id,
+    status,
+    entity.current_start,
+    entity.current_end,
+    entity.charge_at
+  )
+
+  if (status === 'HALTED' || status === 'CANCELLED' || status === 'COMPLETED' || status === 'EXPIRED') {
+    logger.warn({ razorpaySubscriptionId: entity.id, status }, 'Razorpay subscription state changed')
+  }
+}
+
+async function handleSubscriptionCharged(evt: RazorpayWebhookPayload): Promise<void> {
+  const subscription = evt.payload.subscription?.entity
+  const payment = evt.payload.payment?.entity
+  if (!subscription || !payment) {
+    logger.warn({ event: evt.event }, 'subscription.charged webhook missing subscription or payment entity — ignoring')
+    return
+  }
+
+  await paymentService.confirmSubscriptionCharge({
+    razorpaySubscriptionId: subscription.id,
+    razorpayPaymentId: payment.id,
+    amountInSubunits: payment.amount,
+    currentStart: subscription.current_start,
+    currentEnd: subscription.current_end,
+    chargeAt: subscription.charge_at,
+  })
 }

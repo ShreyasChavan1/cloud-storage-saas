@@ -558,3 +558,21 @@ token and actually change the password. Outside `NODE_ENV=production`, the
 raw token is returned in the response body (`devToken`) so you can test the
 flow manually via Prisma Studio or curl until a completion endpoint and a
 real mailer (e.g. Resend, SES, Postmark) are wired up.
+
+
+## Phase 11C — Razorpay Autopay
+
+Paid plans can now use Razorpay Subscriptions rather than creating a new one-time Order at every renewal. Razorpay requires a reusable Plan, then a Subscription and a Checkout authorisation; subsequent charges are triggered automatically by Razorpay and reported through subscription webhooks.
+
+The backend exposes:
+- `GET /api/payments/plans`
+- `POST /api/payments/create-subscription`
+- `POST /api/payments/verify-subscription`
+
+Create the monthly Basic and Pro plans once in Razorpay, then configure `RAZORPAY_PLAN_BASIC_ID` and `RAZORPAY_PLAN_PRO_ID`. The helper `npm run razorpay:create-plans` creates the two example plans (₹9.99 and ₹24.99) and prints their IDs. Razorpay Plans themselves are immutable, so create a new provider Plan when pricing changes.
+
+The local `BillingSubscription` table stores the provider mandate separately from Nimbus's current `Subscription` entitlement. This allows a new mandate to be authorised during a plan change without overwriting the current entitlement prematurely. Recurring payments are appended to the normal `Payment` ledger.
+
+Webhook handling covers `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, and `subscription.expired`. `subscription.charged` is the authoritative recurring-payment event: it records the payment, updates the local billing period, keeps the Nimbus plan active, and retries Nextcloud quota reconciliation through the existing mechanism.
+
+The existing `create-order`/`verify-payment` endpoints remain available for compatibility with the previous one-time payment flow. New paid-plan UI should use the Subscription endpoints instead.

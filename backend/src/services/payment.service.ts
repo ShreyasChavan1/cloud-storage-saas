@@ -4,6 +4,7 @@ import { userRepository } from '../repositories/user.repository'
 import { planRepository } from '../repositories/plan.repository'
 import { paymentRepository } from '../repositories/payment.repository'
 import { subscriptionRepository } from '../repositories/subscription.repository'
+import { billingSubscriptionRepository } from '../repositories/billingSubscription.repository'
 import { razorpayService } from './RazorpayService'
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { toPaymentDTO, PaymentDTO } from '../models/payment.model'
@@ -11,9 +12,9 @@ import { toSubscriptionDTO, SubscriptionDTO, SubscriptionWithPlan } from '../mod
 import { ApiError } from '../utils/ApiError'
 import { logger } from '../config/logger'
 import { env } from '../config/env'
-import { DEFAULT_PLAN_NAME, SUBSCRIPTION_PERIOD_DAYS, RENEWAL_WINDOW_DAYS } from '../config/plans'
+import { DEFAULT_PLAN_NAME, SUBSCRIPTION_PERIOD_DAYS, RENEWAL_WINDOW_DAYS, RAZORPAY_SUBSCRIPTION_TOTAL_COUNT } from '../config/plans'
 import { Plan } from '@prisma/client'
-import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput } from '../validators/payment.validator'
+import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput, CreateSubscriptionInput, VerifySubscriptionInput } from '../validators/payment.validator'
 
 function renewalDateFromNow(): Date {
   return new Date(Date.now() + SUBSCRIPTION_PERIOD_DAYS * 24 * 60 * 60 * 1000)
@@ -105,7 +106,204 @@ async function applyPlanChange(
   return { subscription, quotaSynced }
 }
 
+function razorpayPlanIdFor(planName: string): string {
+  const id = planName === 'Basic' ? env.RAZORPAY_PLAN_BASIC_ID : planName === 'Pro' ? env.RAZORPAY_PLAN_PRO_ID : undefined
+  if (!id) throw ApiError.internal(`Razorpay subscription plan is not configured for ${planName}`)
+  return id
+}
+
+async function cancelSupersededBillingSubscriptions(userId: string, keepId: string): Promise<void> {
+  const rows = await billingSubscriptionRepository.findByUserId(userId)
+  for (const row of rows) {
+    if (row.id === keepId || row.status === 'CANCELLED' || row.status === 'COMPLETED' || row.status === 'EXPIRED') continue
+    try {
+      await razorpayService.cancelSubscription(row.razorpaySubscriptionId, false)
+      await billingSubscriptionRepository.updateStatus(row.id, 'CANCELLED')
+    } catch (err) {
+      logger.error({ userId, billingSubscriptionId: row.id, err }, 'Failed to cancel superseded Razorpay subscription')
+    }
+  }
+}
+
+async function activateBillingSubscription(
+  billingId: string,
+  currentStart?: number | null,
+  currentEnd?: number | null,
+  chargeAt?: number | null
+): Promise<{ subscription: SubscriptionWithPlan; quotaSynced: boolean }> {
+  const billing = await billingSubscriptionRepository.findById(billingId)
+  if (!billing) throw ApiError.notFound('Billing subscription not found')
+
+  const plan = await planRepository.findById(billing.planId)
+  if (!plan) throw ApiError.internal('The plan for this subscription no longer exists')
+
+  const result = await applyPlanChange(billing.userId, plan, 'ACTIVE')
+  const providerEnd = currentEnd ? new Date(currentEnd * 1000) : result.subscription.renewalDate
+  await prisma.subscription.update({ where: { id: result.subscription.id }, data: { renewalDate: providerEnd } })
+  await billingSubscriptionRepository.updateStatus(billing.id, 'ACTIVE', {
+    currentStart: currentStart ? new Date(currentStart * 1000) : new Date(),
+    currentEnd: providerEnd,
+    chargeAt: chargeAt ? new Date(chargeAt * 1000) : providerEnd,
+  })
+  await cancelSupersededBillingSubscriptions(billing.userId, billing.id)
+  await billingSubscriptionRepository.attachLocalSubscription(billing.id, result.subscription.id)
+
+  const subscription = await subscriptionRepository.findByUserId(billing.userId)
+  if (!subscription) throw ApiError.internal('Subscription disappeared during activation')
+  return { subscription, quotaSynced: !!subscription.quotaSyncedAt }
+}
+
 export const paymentService = {
+  async listPlans() {
+    const plans = await planRepository.findAll()
+    return plans.map((plan) => ({ id: plan.id, name: plan.name, storageLimitGb: plan.storageLimit, price: plan.price.toString() }))
+  },
+
+  async createSubscription(
+    userId: string,
+    input: CreateSubscriptionInput
+  ): Promise<{ subscriptionId: string; keyId: string; planId: string; planName: string; amount: number; currency: string }> {
+    const plan = await planRepository.findById(input.planId)
+    if (!plan) throw ApiError.badRequest('Invalid plan')
+    if (Number(plan.price) <= 0) throw ApiError.badRequest('Free plans do not require autopay')
+
+    const current = await subscriptionRepository.findByUserId(userId)
+    const activeBilling = await billingSubscriptionRepository.findActiveForUser(userId)
+    if (current?.status === 'ACTIVE' && current.planId === plan.id && activeBilling?.planId === plan.id && activeBilling.status === 'ACTIVE') {
+      throw ApiError.badRequest('You already have an active autopay subscription for this plan')
+    }
+
+    const razorpay = await razorpayService.createSubscription({
+      planId: razorpayPlanIdFor(plan.name),
+      totalCount: RAZORPAY_SUBSCRIPTION_TOTAL_COUNT,
+      quantity: 1,
+      customerNotify: true,
+      notes: { userId, planId: plan.id },
+    })
+
+    try {
+      await billingSubscriptionRepository.create({
+        userId,
+        planId: plan.id,
+        razorpaySubscriptionId: razorpay.id,
+        status: razorpay.status === 'authenticated' ? 'AUTHENTICATED' : 'CREATED',
+        chargeAt: razorpay.chargeAt ? new Date(razorpay.chargeAt * 1000) : null,
+        currentEnd: razorpay.currentEnd ? new Date(razorpay.currentEnd * 1000) : null,
+      })
+    } catch (err) {
+      // A local persistence failure must not leave an orphaned live mandate.
+      try { await razorpayService.cancelSubscription(razorpay.id, false) } catch (cancelErr) {
+        logger.error({ razorpaySubscriptionId: razorpay.id, cancelErr }, 'Failed to cancel orphaned Razorpay subscription')
+      }
+      throw err
+    }
+
+    return {
+      subscriptionId: razorpay.id,
+      keyId: razorpayService.keyId,
+      planId: plan.id,
+      planName: plan.name,
+      amount: Math.round(Number(plan.price) * 100),
+      currency: env.RAZORPAY_CURRENCY,
+    }
+  },
+
+  async verifySubscription(
+    userId: string,
+    input: VerifySubscriptionInput
+  ): Promise<{ payment: PaymentDTO; subscription: SubscriptionDTO; quotaSynced: boolean }> {
+    const billing = await billingSubscriptionRepository.findByRazorpaySubscriptionId(input.razorpaySubscriptionId)
+    if (!billing) throw ApiError.notFound('No matching Razorpay subscription found')
+    if (billing.userId !== userId) throw ApiError.forbidden('This subscription does not belong to you')
+
+    if (!razorpayService.verifySubscriptionSignature({
+      paymentId: input.razorpayPaymentId,
+      subscriptionId: input.razorpaySubscriptionId,
+      signature: input.razorpaySignature,
+    })) {
+      throw ApiError.badRequest('Invalid subscription signature')
+    }
+
+    if (billing.status === 'CANCELLED' || billing.status === 'EXPIRED' || billing.status === 'COMPLETED') {
+      throw ApiError.conflict(`Razorpay subscription is already ${billing.status.toLowerCase()}`)
+    }
+
+    const plan = await planRepository.findById(billing.planId)
+    if (!plan) throw ApiError.internal('The plan for this subscription no longer exists')
+
+    const { subscription, quotaSynced } = await activateBillingSubscription(billing.id)
+    const existingPayment = await paymentRepository.findByProviderPaymentId(input.razorpayPaymentId)
+    const payment = existingPayment ?? await paymentRepository.createSucceeded({
+      userId,
+      planId: plan.id,
+      amount: plan.price,
+      provider: 'razorpay',
+      providerPaymentId: input.razorpayPaymentId,
+      subscriptionId: subscription.id,
+      billingSubscriptionId: billing.id,
+    })
+
+    return { payment: toPaymentDTO(payment), subscription: toSubscriptionDTO(subscription), quotaSynced }
+  },
+
+  async confirmSubscriptionCharge(params: { razorpaySubscriptionId: string; razorpayPaymentId: string; amountInSubunits?: number; currentStart?: number | null; currentEnd?: number | null; chargeAt?: number | null }): Promise<void> {
+    const billing = await billingSubscriptionRepository.findByRazorpaySubscriptionId(params.razorpaySubscriptionId)
+    if (!billing) {
+      logger.warn({ razorpaySubscriptionId: params.razorpaySubscriptionId }, 'subscription.charged for unknown subscription — ignoring')
+      return
+    }
+
+    if (await paymentRepository.findByProviderPaymentId(params.razorpayPaymentId)) return
+
+    const plan = await planRepository.findById(billing.planId)
+    if (!plan) throw ApiError.internal('The plan for this subscription no longer exists')
+
+    const { subscription } = await activateBillingSubscription(
+      billing.id,
+      params.currentStart,
+      params.currentEnd,
+      params.chargeAt
+    )
+    await paymentRepository.createSucceeded({
+      userId: billing.userId,
+      planId: plan.id,
+      amount: params.amountInSubunits != null ? params.amountInSubunits / 100 : plan.price,
+      provider: 'razorpay',
+      providerPaymentId: params.razorpayPaymentId,
+      subscriptionId: subscription.id,
+      billingSubscriptionId: billing.id,
+    })
+  },
+
+  async markBillingSubscriptionStatus(razorpaySubscriptionId: string, status: 'AUTHENTICATED' | 'ACTIVE' | 'PENDING' | 'HALTED' | 'CANCELLED' | 'COMPLETED' | 'EXPIRED', currentStart?: number | null, currentEnd?: number | null, chargeAt?: number | null): Promise<void> {
+    const billing = await billingSubscriptionRepository.findByRazorpaySubscriptionId(razorpaySubscriptionId)
+    if (!billing) {
+      logger.warn({ razorpaySubscriptionId, status }, 'Razorpay subscription webhook for unknown subscription — ignoring')
+      return
+    }
+    if (status === 'ACTIVE') {
+      await activateBillingSubscription(billing.id, currentStart, currentEnd, chargeAt)
+      return
+    }
+
+    await billingSubscriptionRepository.updateStatus(billing.id, status, {
+      currentStart: currentStart ? new Date(currentStart * 1000) : undefined,
+      currentEnd: currentEnd ? new Date(currentEnd * 1000) : undefined,
+      chargeAt: chargeAt ? new Date(chargeAt * 1000) : undefined,
+    })
+
+    const local = await subscriptionRepository.findByUserId(billing.userId)
+    if (local && local.id === billing.subscriptionId) {
+      if (status === 'PENDING' || status === 'HALTED') {
+        if (local.status === 'ACTIVE') await subscriptionRepository.markPastDue(local.id)
+      } else if (status === 'CANCELLED' || status === 'COMPLETED' || status === 'EXPIRED') {
+        if (local.status !== 'CANCELED' && local.planId === billing.planId) {
+          await paymentService.expireSubscriptionToFree(billing.userId)
+        }
+      }
+    }
+  },
+
   async createOrder(
     userId: string,
     input: CreateOrderInput
@@ -364,6 +562,10 @@ export const paymentService = {
       if (current.cancelAtPeriodEnd) {
         throw ApiError.badRequest('Cancellation is already scheduled for the end of the current billing period')
       }
+      const activeBilling = await billingSubscriptionRepository.findActiveForUser(userId)
+      if (activeBilling && ['ACTIVE', 'AUTHENTICATED'].includes(activeBilling.status)) {
+        await razorpayService.cancelSubscription(activeBilling.razorpaySubscriptionId, true)
+      }
       // No plan/quota change at all here — that's the whole point of
       // "at period end." Just flips the marker reconciliation.service.ts's
       // sweep acts on once renewalDate actually arrives.
@@ -376,6 +578,11 @@ export const paymentService = {
       throw ApiError.internal(`Default plan "${DEFAULT_PLAN_NAME}" not found. Run "npm run prisma:seed".`)
     }
 
+    const activeBilling = await billingSubscriptionRepository.findActiveForUser(userId)
+    if (activeBilling && ['ACTIVE', 'AUTHENTICATED', 'PENDING'].includes(activeBilling.status)) {
+      await razorpayService.cancelSubscription(activeBilling.razorpaySubscriptionId, false)
+      await billingSubscriptionRepository.updateStatus(activeBilling.id, 'CANCELLED')
+    }
     const { subscription, quotaSynced } = await applyPlanChange(userId, freePlan, 'CANCELED')
     return { subscription: toSubscriptionDTO(subscription), quotaSynced }
   },

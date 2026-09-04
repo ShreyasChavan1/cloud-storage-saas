@@ -1,4 +1,5 @@
 import { subscriptionRepository } from '../repositories/subscription.repository'
+import { billingSubscriptionRepository } from '../repositories/billingSubscription.repository'
 import { userRepository } from '../repositories/user.repository'
 import { paymentService } from './payment.service'
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
@@ -53,6 +54,18 @@ export const reconciliationService = {
           await paymentService.cancelSubscription(sub.userId)
           summary.canceledAtPeriodEnd++
         } else if (Number(sub.plan.price) > 0) {
+          const billing = await billingSubscriptionRepository.findForUserPlan(sub.userId, sub.planId)
+          if (billing?.status === 'ACTIVE') {
+            // Razorpay owns the recurring schedule for autopay subscriptions.
+            // Do not manufacture a PAST_DUE state merely because our webhook
+            // delivery was delayed; the provider says the mandate is active.
+            continue
+          }
+          if (billing?.status === 'PENDING' || billing?.status === 'HALTED') {
+            await subscriptionRepository.markPastDue(sub.id)
+            summary.markedPastDue++
+            continue
+          }
           // A paid plan reached the end of its period with no renewal
           // payment ever landing (verify-payment or the payment.captured
           // webhook would have already pushed renewalDate forward
