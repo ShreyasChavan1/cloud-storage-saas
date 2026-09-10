@@ -1,4 +1,4 @@
-// Prisma schema — Nimbus backend (through Phase 11B: recurring billing & webhooks)
+// Prisma schema — Nimbus backend (through Phase 11C: autopay, account features & production hardening)
 // Run `npm run prisma:migrate` after setting DATABASE_URL in .env,
 // then `npm run prisma:seed` to load the default plans (and, if
 // ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD are set, a bootstrap admin — see
@@ -66,6 +66,7 @@ model User {
   passwordHash String     @map("password_hash")
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
+  avatarData   String?    @map("avatar_data") @db.Text
 
   // Denormalized pointer to the user's current plan, for cheap reads
   // (dashboard storage limits etc.) without joining through subscriptions.
@@ -93,8 +94,10 @@ model User {
   subscriptions       Subscription[]
   billingSubscriptions BillingSubscription[]
   payments            Payment[]
+  favorites            Favorite[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  notificationPreferences NotificationPreference?
 
   @@map("users")
 }
@@ -112,6 +115,18 @@ model Plan {
   payments            Payment[]
 
   @@map("plans")
+}
+
+model Favorite {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  path      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, path])
+  @@index([userId])
+  @@map("favorites")
 }
 
 // One row per user, upserted in place rather than accumulating a row per
@@ -319,4 +334,18 @@ model PasswordResetToken {
 
   @@index([userId])
   @@map("password_reset_tokens")
+}
+
+model NotificationPreference {
+  id                 String   @id @default(uuid())
+  userId             String   @unique @map("user_id")
+  user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fileShared         Boolean  @default(true) @map("file_shared")
+  comments           Boolean  @default(true)
+  storageAlmostFull  Boolean  @default(true) @map("storage_almost_full")
+  productUpdates     Boolean  @default(true) @map("product_updates")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  @@map("notification_preferences")
 }

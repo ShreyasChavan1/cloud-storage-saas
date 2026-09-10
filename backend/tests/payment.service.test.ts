@@ -21,18 +21,23 @@ jest.mock('../src/repositories/user.repository', () => ({
 
 const mockFindPlanById = jest.fn()
 const mockFindPlanByName = jest.fn()
+const mockFindAllPlans = jest.fn()
 jest.mock('../src/repositories/plan.repository', () => ({
-  planRepository: { findById: mockFindPlanById, findByName: mockFindPlanByName },
+  planRepository: { findById: mockFindPlanById, findByName: mockFindPlanByName, findAll: mockFindAllPlans },
 }))
 
 const mockPaymentCreate = jest.fn()
 const mockFindByProviderOrderId = jest.fn()
+const mockFindByProviderPaymentId = jest.fn()
+const mockCreateSucceeded = jest.fn()
 const mockMarkSucceeded = jest.fn()
 const mockMarkFailed = jest.fn()
 jest.mock('../src/repositories/payment.repository', () => ({
   paymentRepository: {
     create: mockPaymentCreate,
     findByProviderOrderId: mockFindByProviderOrderId,
+    findByProviderPaymentId: mockFindByProviderPaymentId,
+    createSucceeded: mockCreateSucceeded,
     markSucceeded: mockMarkSucceeded,
     markFailed: mockMarkFailed,
   },
@@ -72,14 +77,18 @@ jest.mock('../src/repositories/billingSubscription.repository', () => ({
 
 const mockVerifyPaymentSignature = jest.fn()
 const mockCreateOrder = jest.fn()
+const mockListPlans = jest.fn()
 const mockCreateSubscription = jest.fn()
 const mockVerifySubscriptionSignature = jest.fn()
 const mockCancelSubscription = jest.fn()
+const mockFetchPayment = jest.fn()
+const mockFetchSubscription = jest.fn()
+const mockFetchPlan = jest.fn()
 jest.mock('../src/services/RazorpayService', () => {
   const actual = jest.requireActual('../src/services/RazorpayService')
   return {
     ...actual,
-    razorpayService: { keyId: 'rzp_test_key', verifyPaymentSignature: mockVerifyPaymentSignature, createOrder: mockCreateOrder, createSubscription: mockCreateSubscription, verifySubscriptionSignature: mockVerifySubscriptionSignature, cancelSubscription: mockCancelSubscription },
+    razorpayService: { keyId: 'rzp_test_key', verifyPaymentSignature: mockVerifyPaymentSignature, createOrder: mockCreateOrder, createSubscription: mockCreateSubscription, verifySubscriptionSignature: mockVerifySubscriptionSignature, cancelSubscription: mockCancelSubscription, listPlans: mockListPlans, fetchPayment: mockFetchPayment, fetchSubscription: mockFetchSubscription, fetchPlan: mockFetchPlan },
   }
 })
 
@@ -135,6 +144,9 @@ function subscriptionRow(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   jest.clearAllMocks()
+  mockFetchPayment.mockResolvedValue({ id: 'pay_123', orderId: 'order_123', amount: 2499, currency: 'INR', status: 'captured' })
+  mockFetchSubscription.mockResolvedValue({ id: 'sub_rzp', planId: 'plan_rzp_pro', status: 'active', currentStart: null, currentEnd: null, chargeAt: null })
+  mockFetchPlan.mockResolvedValue({ id: 'plan_rzp_pro', interval: 1, period: 'monthly', item: { active: true, amount: 2499, unit_amount: 2499, currency: 'INR', name: 'Pro', description: 'Pro' } })
   // Default: the transaction's own subscription.upsert returns something
   // with a `plan` on it (matching what a real `include: { plan: true }`
   // upsert would) unless a test overrides it.
@@ -149,6 +161,26 @@ beforeEach(() => {
   mockBillingFindForUserPlan.mockResolvedValue(null)
   mockBillingUpdateStatus.mockResolvedValue(undefined)
   mockBillingAttachLocalSubscription.mockResolvedValue(undefined)
+})
+
+describe('paymentService.listPlans', () => {
+  it('uses the configured Razorpay plans as the paid catalog and maps them to Nimbus entitlements', async () => {
+    mockFindAllPlans.mockResolvedValue([
+      planRow({ id: 'plan-basic', name: 'Basic', storageLimit: 100, price: { toString: () => '9.99' } as any }),
+      planRow({ id: 'plan-pro', name: 'Pro', storageLimit: 500, price: { toString: () => '24.99' } as any }),
+    ])
+    mockListPlans.mockResolvedValue([
+      { id: process.env.RAZORPAY_PLAN_BASIC_ID || 'plan_basic_test', interval: 1, period: 'monthly', item: { active: true, name: 'Basic Monthly', description: 'Basic', amount: 999, unit_amount: 999, currency: 'INR' }, notes: {} },
+      { id: process.env.RAZORPAY_PLAN_PRO_ID || 'plan_pro_test', interval: 1, period: 'monthly', item: { active: true, name: 'Pro Monthly', description: 'Pro', amount: 2499, unit_amount: 2499, currency: 'INR' }, notes: {} },
+      { id: 'plan_unconfigured', interval: 1, period: 'monthly', item: { active: true, name: 'Unconfigured', description: '', amount: 100, unit_amount: 100, currency: 'INR' }, notes: {} },
+    ])
+
+    const result = await paymentService.listPlans()
+
+    expect(result).toHaveLength(2)
+    expect(result[0]).toMatchObject({ name: 'Basic Monthly', localPlanId: 'plan-basic', localPlanName: 'Basic', price: '9.99', currency: 'INR' })
+    expect(result[1]).toMatchObject({ name: 'Pro Monthly', localPlanId: 'plan-pro', localPlanName: 'Pro', price: '24.99', currency: 'INR' })
+  })
 })
 
 describe('paymentService.createOrder', () => {

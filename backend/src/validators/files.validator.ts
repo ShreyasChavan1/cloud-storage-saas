@@ -62,3 +62,10 @@ export type RenameFileInput = z.infer<typeof renameFileSchema>['body']
 export type CreateFolderInput = z.infer<typeof createFolderSchema>['body']
 export type MoveFileInput = z.infer<typeof moveFileSchema>['body']
 export type CopyFileInput = z.infer<typeof copyFileSchema>['body']
+
+export const favoriteFileSchema = z.object({
+  body: z.object({
+    path: z.string().min(1, 'path is required'),
+    favorite: z.boolean(),
+  }),
+})

@@ -4,6 +4,22 @@ jest.mock('../src/repositories/user.repository', () => ({
   userRepository: { findById: mockFindById },
 }))
 
+const mockFavoriteFindPathsByUser = jest.fn()
+const mockFavoriteAdd = jest.fn()
+const mockFavoriteRemove = jest.fn()
+const mockFavoriteRemoveUnderPath = jest.fn()
+const mockFavoriteRenamePath = jest.fn()
+
+jest.mock('../src/repositories/favorite.repository', () => ({
+  favoriteRepository: {
+    findPathsByUser: mockFavoriteFindPathsByUser,
+    add: mockFavoriteAdd,
+    remove: mockFavoriteRemove,
+    removeUnderPath: mockFavoriteRemoveUnderPath,
+    renamePath: mockFavoriteRenamePath,
+  },
+}))
+
 const mockListDirectory = jest.fn()
 const mockListRecursive = jest.fn()
 const mockStat = jest.fn()
@@ -63,7 +79,10 @@ function fileStat(overrides: Partial<Record<string, unknown>> = {}) {
 }
 
 describe('filesService', () => {
-  afterEach(() => jest.clearAllMocks())
+  afterEach(() => {
+    jest.clearAllMocks()
+    mockFavoriteFindPathsByUser.mockResolvedValue([])
+  })
 
   describe('credential resolution', () => {
     it('throws if the user has no Nextcloud provisioning at all', async () => {
@@ -93,6 +112,7 @@ describe('filesService', () => {
           type: 'file',
           size: 1024,
           modifiedAt: new Date('Mon, 21 Jul 2026 12:00:00 GMT').toISOString(),
+          favorite: false,
           mimeType: 'application/pdf',
         },
         {
@@ -101,6 +121,7 @@ describe('filesService', () => {
           type: 'folder',
           size: 1024,
           modifiedAt: new Date('Mon, 21 Jul 2026 12:00:00 GMT').toISOString(),
+          favorite: false,
         },
       ])
     })
@@ -112,6 +133,36 @@ describe('filesService', () => {
       await filesService.list('user-1', '/Documents/../../secret')
       const [, , calledPath] = mockListDirectory.mock.calls[0]
       expect(calledPath).not.toContain('..')
+    })
+  })
+
+  describe('favorites', () => {
+    it('adds and removes a favorite after verifying the path exists', async () => {
+      mockUserRow()
+      mockStat.mockResolvedValue(fileStat())
+
+      await expect(filesService.setFavorite('user-1', '/Documents/report.pdf', true)).resolves.toEqual({
+        path: '/Documents/report.pdf',
+        favorite: true,
+      })
+      expect(mockFavoriteAdd).toHaveBeenCalledWith('user-1', '/Documents/report.pdf')
+
+      await filesService.setFavorite('user-1', '/Documents/report.pdf', false)
+      expect(mockFavoriteRemove).toHaveBeenCalledWith('user-1', '/Documents/report.pdf')
+    })
+
+    it('returns favorite entries and removes stale favorite paths', async () => {
+      mockUserRow()
+      mockFavoriteFindPathsByUser.mockResolvedValue([
+        { path: '/Documents/report.pdf' },
+        { path: '/Documents/missing.pdf' },
+      ])
+      mockListRecursive.mockResolvedValue([fileStat()])
+
+      await expect(filesService.favorites('user-1')).resolves.toEqual([
+        expect.objectContaining({ name: 'report.pdf', path: '/Documents/report.pdf', favorite: true }),
+      ])
+      expect(mockFavoriteRemove).toHaveBeenCalledWith('user-1', '/Documents/missing.pdf')
     })
   })
 
@@ -316,6 +367,15 @@ describe('filesService', () => {
       mockUploadBuffer.mockRejectedValue(new WebDavError('Insufficient Storage', 507))
       await expect(filesService.upload('user-1', '/', 'big.zip', Buffer.from(''))).rejects.toMatchObject({
         statusCode: 507,
+      })
+    })
+
+    it('maps WebDAV authentication failures to a retryable 503', async () => {
+      mockUserRow()
+      mockListDirectory.mockRejectedValue(new WebDavError('Unauthorized', 401))
+      await expect(filesService.list('user-1', '/')).rejects.toMatchObject({
+        statusCode: 503,
+        message: expect.stringMatching(/storage authentication failed/i),
       })
     })
 

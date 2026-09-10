@@ -10,6 +10,12 @@ export const userService = {
     return toAuthUserDTO(user)
   },
 
+  async updateAvatar(userId: string, avatarData: string | null) {
+    const user = await userRepository.findById(userId)
+    if (!user) throw ApiError.notFound('User not found')
+    return toAuthUserDTO(await userRepository.update(userId, { avatarData }))
+  },
+
   async updateProfile(userId: string, input: UpdateProfileInput) {
     const user = await userRepository.findById(userId)
     if (!user) throw ApiError.notFound('User not found')

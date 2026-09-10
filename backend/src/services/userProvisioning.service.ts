@@ -94,11 +94,23 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
     throw ApiError.serviceUnavailable('Could not set up the storage account. Please try again.')
   }
 
-  // 3. Store the nextcloud_username and the encrypted WebDAV app password
-  // now that provisioning succeeded. The plaintext webdavPassword never
-  // touches the database or a log line — only encrypt()'s output does.
-  return userRepository.update(user.id, {
-    nextcloudUsername,
-    nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
-  })
+  // 3. Store the Nextcloud username and encrypted WebDAV credential. If the
+  // Postgres write fails after the external account exists, compensate by
+  // deleting the Nextcloud account so a retry is not blocked by an orphan.
+  try {
+    return await userRepository.update(user.id, {
+      nextcloudUsername,
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
+  } catch (err) {
+    try {
+      await nextcloudService.deleteUser(nextcloudUsername)
+    } catch (cleanupErr) {
+      logger.error({ userId: user.id, cleanupErr }, 'Failed to clean up Nextcloud account after Postgres provisioning failure')
+    }
+    await userRepository.delete(user.id).catch((deleteErr) => {
+      logger.error({ userId: user.id, deleteErr }, 'Failed to roll back Postgres user after provisioning failure')
+    })
+    throw ApiError.serviceUnavailable('Could not finish setting up the account. Please try again.')
+  }
 }

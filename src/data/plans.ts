@@ -1,8 +1,6 @@
-// Static marketing/pricing content — intentionally NOT fetched from the
-// backend. The `plans` Postgres table (seeded in Phase 3: Free/Basic/Pro)
-// has no GET endpoint exposing it, so there's nothing to fetch even if
-// this page wanted to; these are the same three tiers, just not wired to
-// a live API since none exists.
+// Marketing copy for the three seeded Nimbus tiers. Pricing.tsx overlays
+// the live price/storage values returned by GET /payments/plans so the
+// checkout cannot drift from the backend's actual billing configuration.
 export interface PricingPlan {
   id: string
   name: string
@@ -16,8 +14,8 @@ export interface PricingPlan {
 
 export const pricingPlans: PricingPlan[] = [
   {
-    id: 'starter',
-    name: 'Starter',
+    id: 'free',
+    name: 'Free',
     price: 0,
     cadence: 'mo',
     storageGB: 5,
@@ -25,9 +23,9 @@ export const pricingPlans: PricingPlan[] = [
     features: ['5 GB storage', '1 device sync', 'Basic sharing links', 'Community support'],
   },
   {
-    id: 'pro',
-    name: 'Pro',
-    price: 12,
+    id: 'basic',
+    name: 'Basic',
+    price: 9.99,
     cadence: 'mo',
     storageGB: 100,
     description: 'For individuals who live in their files.',
@@ -35,9 +33,9 @@ export const pricingPlans: PricingPlan[] = [
     highlighted: true,
   },
   {
-    id: 'team',
-    name: 'Team',
-    price: 28,
+    id: 'pro',
+    name: 'Pro',
+    price: 24.99,
     cadence: 'mo',
     storageGB: 500,
     description: 'For teams sharing one source of truth.',

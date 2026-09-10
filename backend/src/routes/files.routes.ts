@@ -11,6 +11,7 @@ import {
   moveFileSchema,
   copyFileSchema,
   downloadFileSchema,
+  favoriteFileSchema,
 } from '../validators/files.validator'
 
 const router = Router()
@@ -24,6 +25,8 @@ router.patch('/rename', validate(renameFileSchema), filesController.rename)
 router.post('/folder', validate(createFolderSchema), filesController.createFolder)
 router.post('/move', validate(moveFileSchema), filesController.move)
 router.post('/copy', validate(copyFileSchema), filesController.copy)
+router.get('/favorites', filesController.favorites)
+router.put('/favorite', validate(favoriteFileSchema), filesController.favorite)
 router.get('/quota', filesController.quota)
 router.get('/stats', filesController.stats)
 router.get('/download', validate(downloadFileSchema), filesController.download)

@@ -112,10 +112,22 @@ export const nextcloudService = {
     await agentRequest<{ success: true }>('DELETE', `/internal/users/${encodeURIComponent(userid)}`)
   },
 
-  async changePassword(userid: string, newPassword: string): Promise<void> {
-    await agentRequest<{ success: true }>('PUT', `/internal/users/${encodeURIComponent(userid)}/password`, {
-      password: newPassword,
-    })
+  async changePassword(userid: string, newPassword: string): Promise<{ webdavPassword: string }> {
+    const result = await agentRequest<{ success: true; webdavPassword: string }>(
+      'PUT',
+      `/internal/users/${encodeURIComponent(userid)}/password`,
+      { password: newPassword }
+    )
+    return { webdavPassword: result.webdavPassword }
+  },
+
+  async refreshWebdavPassword(userid: string, currentPassword: string): Promise<{ webdavPassword: string }> {
+    const result = await agentRequest<{ success: true; webdavPassword: string }>(
+      'PUT',
+      `/internal/users/${encodeURIComponent(userid)}/webdav-password`,
+      { password: currentPassword }
+    )
+    return { webdavPassword: result.webdavPassword }
   },
 
   async setQuota(userid: string, quotaGb: number): Promise<void> {

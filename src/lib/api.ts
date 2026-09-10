@@ -8,6 +8,7 @@ export const api = axios.create({
 // Access token is held in memory only (never localStorage) — a module-level
 // variable is enough since AuthContext is the only thing that sets it.
 let accessToken: string | null = null
+let refreshPromise: Promise<string> | null = null
 
 export function setAccessToken(token: string | null) {
   accessToken = token
@@ -36,9 +37,16 @@ api.interceptors.response.use(
     if (error.response?.status === 401 && !original._retry && !isAuthEndpoint) {
       original._retry = true
       try {
-        const { data } = await api.post('/auth/refresh-token')
-        setAccessToken(data.data.accessToken)
-        original.headers.Authorization = `Bearer ${data.data.accessToken}`
+        if (!refreshPromise) {
+          refreshPromise = api
+            .post('/auth/refresh-token')
+            .then(({ data }) => data.data.accessToken as string)
+            .finally(() => { refreshPromise = null })
+        }
+        const token = await refreshPromise
+        setAccessToken(token)
+        original.headers = original.headers ?? {}
+        original.headers.Authorization = `Bearer ${token}`
         return api(original)
       } catch {
         setAccessToken(null)

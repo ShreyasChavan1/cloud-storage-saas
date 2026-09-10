@@ -13,6 +13,9 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   PASSWORD_RESET_TOKEN_EXPIRES_IN: z.string().default('30m'),
+  CLIENT_RESET_URL: z.string().url().default('http://localhost:5173/reset-password'),
+  RESEND_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().optional(),
 
   BCRYPT_SALT_ROUNDS: z.coerce.number().default(12),
 
@@ -75,6 +78,18 @@ const envSchema = z.object({
   // Razorpay Subscriptions Plan IDs. Create these once in Razorpay Dashboard/API.
   RAZORPAY_PLAN_BASIC_ID: z.string().optional(),
   RAZORPAY_PLAN_PRO_ID: z.string().optional(),
+}).superRefine((values, ctx) => {
+  if (values.NODE_ENV === 'production') {
+    if (!values.RESEND_API_KEY) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required in production' })
+    }
+    if (!values.EMAIL_FROM) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['EMAIL_FROM'], message: 'EMAIL_FROM is required in production' })
+    }
+    if (values.CLIENT_RESET_URL.includes('localhost')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_RESET_URL'], message: 'CLIENT_RESET_URL must point to the production frontend in production' })
+    }
+  }
 })
 
 const parsed = envSchema.safeParse(process.env)

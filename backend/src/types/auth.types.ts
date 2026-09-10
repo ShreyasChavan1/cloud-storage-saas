@@ -11,6 +11,7 @@ export interface AuthUserDTO {
   name: string
   email: string
   avatarInitials: string
+  avatarUrl: string | null
   plan: string | null
   role: 'USER' | 'ADMIN'
 }

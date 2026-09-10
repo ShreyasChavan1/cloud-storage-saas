@@ -39,7 +39,9 @@ export const filesController = {
     const { stream, stat } = await filesService.download(req.user!.sub, req.query.path as string)
 
     res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(stat.name)}"`)
+    const safeAsciiName = stat.name.replace(/[\\"\r\n]/g, '_').replace(/[^\x20-\x7E]/g, '_') || 'download'
+    const encodedName = encodeURIComponent(stat.name).replace(/'/g, '%27')
+    res.setHeader('Content-Disposition', `attachment; filename="${safeAsciiName}"; filename*=UTF-8''${encodedName}`)
     if (stat.size) res.setHeader('Content-Length', String(stat.size))
 
     stream.on('error', () => {
@@ -78,6 +80,16 @@ export const filesController = {
   quota: asyncHandler(async (req: Request, res: Response) => {
     const quota = await filesService.quota(req.user!.sub)
     return sendSuccess(res, quota)
+  }),
+
+  favorite: asyncHandler(async (req: Request, res: Response) => {
+    const result = await filesService.setFavorite(req.user!.sub, req.body.path, req.body.favorite)
+    return sendSuccess(res, { favorite: result })
+  }),
+
+  favorites: asyncHandler(async (req: Request, res: Response) => {
+    const entries = await filesService.favorites(req.user!.sub)
+    return sendSuccess(res, { entries })
   }),
 
   stats: asyncHandler(async (req: Request, res: Response) => {

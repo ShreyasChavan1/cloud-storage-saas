@@ -45,6 +45,7 @@ export function useDeleteFile(currentPath: string | undefined) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: key })
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
       invalidateStats(queryClient)
     },
   })
@@ -68,6 +69,7 @@ export function useRenameFile(currentPath: string | undefined) {
     },
     onSettled: () => {
       queryClient.invalidateQueries({ queryKey: key })
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
       invalidateStats(queryClient)
     },
   })
@@ -91,6 +93,7 @@ export function useMoveFile(currentPath: string | undefined) {
     mutationFn: ({ from, to }: { from: string; to: string }) => filesApi.move(from, to),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) })
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
       invalidateStats(queryClient)
     },
   })
@@ -103,6 +106,17 @@ export function useCopyFile(currentPath: string | undefined) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) })
       invalidateStats(queryClient)
+    },
+  })
+}
+
+export function useFavoriteFile(currentPath: string | undefined) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ path, favorite }: { path: string; favorite: boolean }) => filesApi.setFavorite(path, favorite),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: filesQueryKey(currentPath) })
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
     },
   })
 }

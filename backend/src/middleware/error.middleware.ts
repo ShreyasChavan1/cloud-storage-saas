@@ -5,6 +5,7 @@ import { ApiError } from '../utils/ApiError'
 import { sendError } from '../utils/response'
 import { logger } from '../config/logger'
 import { env } from '../config/env'
+import { InvalidPathError } from '../utils/davPath'
 
 // Must be registered last, after all routes. Express recognizes it as an
 // error handler purely by its 4-argument signature.
@@ -14,6 +15,10 @@ export function errorMiddleware(err: unknown, req: Request, res: Response, _next
       logger.error({ err, reqId: req.id }, 'Non-operational error')
     }
     return sendError(res, err.statusCode, err.message, err.details)
+  }
+
+  if (err instanceof InvalidPathError) {
+    return sendError(res, 400, err.message)
   }
 
   if (err instanceof multer.MulterError) {

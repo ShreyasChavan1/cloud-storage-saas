@@ -4,7 +4,7 @@ import { DropdownMenu } from '@/components/ui/DropdownMenu'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { FileEntry, filesApi } from '@/api/files'
-import { useDeleteFile, useRenameFile, useMoveFile } from '@/hooks/useFileMutations'
+import { useDeleteFile, useRenameFile, useMoveFile, useFavoriteFile } from '@/hooks/useFileMutations'
 import { useToast } from '@/context/ToastContext'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 
@@ -13,6 +13,7 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
   const deleteFile = useDeleteFile(currentPath)
   const renameFile = useRenameFile(currentPath)
   const moveFile = useMoveFile(currentPath)
+  const favoriteFile = useFavoriteFile(currentPath)
 
   const [renaming, setRenaming] = useState(false)
   const [moving, setMoving] = useState(false)
@@ -72,10 +73,12 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
           { label: 'Rename', icon: <Pencil className="h-4 w-4" />, onSelect: () => setRenaming(true) },
           { label: 'Move', icon: <FolderInput className="h-4 w-4" />, onSelect: () => setMoving(true) },
           {
-            label: 'Favorite',
-            icon: <Star className="h-4 w-4" />,
-            disabled: true,
-            onSelect: () => {},
+            label: entry.favorite ? 'Remove from favorites' : 'Favorite',
+            icon: <Star className={entry.favorite ? 'h-4 w-4 fill-current text-amber-500' : 'h-4 w-4'} />,
+            onSelect: () => favoriteFile.mutate(
+              { path: entry.path, favorite: !entry.favorite },
+              { onError: (err) => showToast(getErrorMessage(err, 'Favorite update failed.'), 'error') }
+            ),
           },
           { label: 'Delete', icon: <Trash2 className="h-4 w-4" />, tone: 'danger', onSelect: () => setDeleting(true) },
         ]}

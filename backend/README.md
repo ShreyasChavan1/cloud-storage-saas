@@ -1,14 +1,13 @@
-# Nimbus Backend — through Phase 11B (Recurring Billing & Webhooks)
+# Nimbus Backend — production hardening + Phase 11C autopay
 
 Express + TypeScript API backing the Nimbus frontend. Started as auth-only
 (Phase 2) and has since grown real file storage over WebDAV (Phase 6), live
 quota/stats reporting for the dashboard (Phase 9), a role-protected admin
 surface for managing accounts (Phase 10), server-side Razorpay payments for
 upgrading/canceling a plan (Phase 11A), and now the full recurring-billing
-lifecycle on top of that — webhooks, renewals, failed payments, refunds,
-period-end cancellation, and reconciliation (Phase 11B) — see the
-phase-by-phase sections below for how each layer was added on top of the
-last.
+lifecycle on top of that — webhooks, renewals, failed payments, refunds, period-end cancellation,
+reconciliation, account preferences, password reset email delivery, and
+production hardening.
 
 ## Stack
 Express · TypeScript · PostgreSQL · Prisma · JWT (access + rotating refresh) · bcrypt · Zod · Pino · WebDAV (file storage) · Multer (uploads) · Razorpay (payments)
@@ -91,6 +90,19 @@ docker run --name nimbus-db -e POSTGRES_USER=nimbus -e POSTGRES_PASSWORD=nimbus 
 | POST | `/api/payments/cancel-subscription` | Bearer access token | Cancel the caller's own subscription, reverting to the default plan immediately |
 
 All responses use the envelope `{ success, data }` or `{ success: false, error: { message, details } }`.
+
+
+## Password reset email delivery
+
+Production password-reset emails are sent through Resend. Set these backend environment variables:
+
+```env
+CLIENT_RESET_URL=https://your-frontend.example.com/reset-password
+RESEND_API_KEY=re_...
+EMAIL_FROM=Nimbus <no-reply@your-verified-domain.example>
+```
+
+The sender domain/address must be verified in Resend. In development/test, leaving the Resend variables empty keeps the safe `devToken` fallback for local testing. Production startup rejects a missing Resend key, sender, or a localhost reset URL. The public forgot-password endpoint always returns the same generic response so mail delivery cannot be used to enumerate accounts.
 
 ## Auth model
 - **Access token**: short-lived JWT (default 15m), sent as `Authorization: Bearer <token>`, held in memory on the client.
@@ -569,10 +581,19 @@ The backend exposes:
 - `POST /api/payments/create-subscription`
 - `POST /api/payments/verify-subscription`
 
-Create the monthly Basic and Pro plans once in Razorpay, then configure `RAZORPAY_PLAN_BASIC_ID` and `RAZORPAY_PLAN_PRO_ID`. The helper `npm run razorpay:create-plans` creates the two example plans (₹9.99 and ₹24.99) and prints their IDs. Razorpay Plans themselves are immutable, so create a new provider Plan when pricing changes.
+`GET /api/payments/plans` reads the Razorpay Plans API and uses Razorpay as the source of truth for the paid catalog's provider name, amount and billing cadence. Only active monthly plans whose IDs are explicitly configured as Nimbus's Basic/Pro subscription plans are exposed, because a Razorpay plan still needs a corresponding Nimbus entitlement row to determine storage quota and maintain local foreign-key relationships. Configure `RAZORPAY_PLAN_BASIC_ID` and `RAZORPAY_PLAN_PRO_ID` with the provider Plan IDs. The helper `npm run razorpay:create-plans` creates the two example plans (₹9.99 and ₹24.99) and prints their IDs. Razorpay Plans themselves are immutable, so create a new provider Plan when pricing changes and update the corresponding Nimbus configuration.
 
 The local `BillingSubscription` table stores the provider mandate separately from Nimbus's current `Subscription` entitlement. This allows a new mandate to be authorised during a plan change without overwriting the current entitlement prematurely. Recurring payments are appended to the normal `Payment` ledger.
 
 Webhook handling covers `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, and `subscription.expired`. `subscription.charged` is the authoritative recurring-payment event: it records the payment, updates the local billing period, keeps the Nimbus plan active, and retries Nextcloud quota reconciliation through the existing mechanism.
 
 The existing `create-order`/`verify-payment` endpoints remain available for compatibility with the previous one-time payment flow. New paid-plan UI should use the Subscription endpoints instead.
+
+### Password reset Nextcloud username mapping
+
+Password reset and authenticated password changes synchronize the Nextcloud password using the user's stored `nextcloudUsername` (falling back to the Nimbus user ID), never the email address. This matches the provisioning flow, which uses the Nimbus UUID as the Nextcloud username.
+
+
+### WebDAV credential repair
+
+Authenticated users can call `POST /api/users/me/webdav/repair` with their current password to rotate the dedicated Nextcloud WebDAV app password without changing the Nimbus/Nextcloud login password. This is used to recover accounts whose stored WebDAV credential became stale after an external password change or an older deployment.

@@ -8,6 +8,8 @@ import { PromptDialog } from '@/components/ui/PromptDialog'
 import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
 import { useCreateFolder } from '@/hooks/useFileMutations'
+import { useQuery } from '@tanstack/react-query'
+import { filesApi } from '@/api/files'
 import { useDropToMove } from '@/hooks/useDropToMove'
 import { useToast } from '@/context/ToastContext'
 import { useUploadQueue } from '@/context/UploadQueueContext'
@@ -15,12 +17,7 @@ import { CollectedFile } from '@/lib/collectFileEntries'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { cn } from '@/lib/cn'
 
-// Favorites, Shared, and Trash have no backend support at all — Phase 6
-// only ever built plain directory listing (no favorite-flag, sharing, or
-// trash endpoints exist). Showing an honest "not available yet" state here
-// is the alternative to either hiding these entry points or faking data.
 const unsupportedViews: Record<string, { label: string; icon: typeof Star; note: string }> = {
-  favorites: { label: 'Favorites', icon: Star, note: "Favoriting isn't wired up to the backend yet." },
   shared: { label: 'Shared with you', icon: Share2, note: "Sharing isn't wired up to the backend yet." },
   trash: { label: 'Trash', icon: Trash2, note: "Trash isn't wired up to the backend yet — deleted items are gone for now." },
 }
@@ -70,7 +67,16 @@ export default function Files() {
   const currentPath = searchParams.get('path') ?? undefined
   const search = searchParams.get('search') ?? ''
 
-  const { data: entries, isLoading, isError, refetch } = useFiles(view === 'all' ? currentPath : undefined)
+  const { data: folderEntries, isLoading: folderLoading, isError: folderError, refetch: refetchFolder } = useFiles(view === 'all' ? currentPath : undefined)
+  const { data: favoriteEntries, isLoading: favoritesLoading, isError: favoritesError, refetch: refetchFavorites } = useQuery({
+    queryKey: ['favorites'],
+    queryFn: filesApi.favorites,
+    enabled: view === 'favorites',
+  })
+  const entries = view === 'favorites' ? favoriteEntries : folderEntries
+  const isLoading = view === 'favorites' ? favoritesLoading : folderLoading
+  const isError = view === 'favorites' ? favoritesError : folderError
+  const refetch = view === 'favorites' ? refetchFavorites : refetchFolder
   const createFolder = useCreateFolder(currentPath)
 
   const filteredEntries = useMemo(() => {
@@ -107,7 +113,7 @@ export default function Files() {
     })
   }
 
-  if (view !== 'all') {
+  if (view !== 'all' && view !== 'favorites') {
     const info = unsupportedViews[view] ?? unsupportedViews.trash
     return (
       <div className="mx-auto max-w-7xl animate-fade-up">
@@ -124,12 +130,17 @@ export default function Files() {
   }
 
   const segments = breadcrumbSegments(currentPath)
+  const isFavoritesView = view === 'favorites'
 
   return (
     <div className="mx-auto max-w-7xl animate-fade-up">
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex min-w-0 items-center gap-1 text-2xl font-bold">
-          <BreadcrumbButton label="All files" targetPath={undefined} currentPath={currentPath} onClick={() => openFolder('/')} />
+          {isFavoritesView ? (
+            <><Star className="h-5 w-5 text-amber-500" /><span>Favorites</span></>
+          ) : (
+            <BreadcrumbButton label="All files" targetPath={undefined} currentPath={currentPath} onClick={() => openFolder('/')} />
+          )}
           {segments.map((segment, i) => (
             <span key={i} className="flex items-center gap-1">
               <ChevronRight className="h-5 w-5 shrink-0 text-ink-300" />
@@ -144,10 +155,10 @@ export default function Files() {
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setCreatingFolder(true)}>
+          {!isFavoritesView && <Button variant="secondary" size="sm" onClick={() => setCreatingFolder(true)}>
             <FolderPlus className="h-4 w-4" />
             New folder
-          </Button>
+          </Button>}
           <div className="flex items-center gap-1 rounded-xl border border-line bg-surface-0 p-1 dark:border-dark-border dark:bg-dark-surface">
             <button
               onClick={() => setLayout('grid')}
@@ -176,9 +187,11 @@ export default function Files() {
         </p>
       )}
 
-      <div className="mt-5">
-        <UploadDropzone onItemsSelected={handleItemsSelected} />
-      </div>
+      {!isFavoritesView && (
+        <div className="mt-5">
+          <UploadDropzone onItemsSelected={handleItemsSelected} />
+        </div>
+      )}
 
       <div className="mt-6">
         {isLoading ? (

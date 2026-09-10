@@ -1,6 +1,7 @@
 import request from 'supertest'
 
 const mockCreateUser = jest.fn()
+const mockChangePassword = jest.fn()
 
 jest.mock('../src/services/NextcloudService', () => {
   const actual = jest.requireActual('../src/services/NextcloudService')
@@ -9,12 +10,14 @@ jest.mock('../src/services/NextcloudService', () => {
     nextcloudService: {
       ...actual.nextcloudService,
       createUser: mockCreateUser,
+      changePassword: mockChangePassword,
     },
   }
 })
 
 import { createApp } from '../src/app'
 import { prisma } from '../src/database/prisma'
+import { decrypt } from '../src/utils/encryption'
 
 // This is a real Postgres integration suite; allow for a cold database connection.
 jest.setTimeout(30000)
@@ -33,6 +36,7 @@ const testUser = {
 
 beforeAll(() => {
   mockCreateUser.mockResolvedValue({ webdavPassword: 'test-webdav-password' })
+  mockChangePassword.mockResolvedValue({ webdavPassword: 'rotated-webdav-password' })
 })
 
 afterAll(async () => {
@@ -107,6 +111,7 @@ describe('Auth flow', () => {
     expect(res.body.data.devToken).toBeUndefined()
   })
 
+
   // Suspension (Phase 10) is set directly via Prisma here rather than
   // through the admin API — this file is about auth's own behavior, not
   // re-testing adminService.setUserStatus (see admin.service.test.ts for
@@ -141,5 +146,32 @@ describe('Auth flow', () => {
     await prisma.user.update({ where: { email: testUser.email }, data: { status: 'ACTIVE' } })
     const replayRes = await request(app).post('/api/auth/refresh-token').set('Cookie', cookie)
     expect(replayRes.status).toBe(401)
+  })
+
+  it('resets the password using the stored Nextcloud username, not the email address', async () => {
+    const userBefore = await prisma.user.findUnique({ where: { email: testUser.email } })
+    expect(userBefore).toBeTruthy()
+    expect(userBefore!.nextcloudUsername).toBe(userBefore!.id)
+
+    const forgotRes = await request(app)
+      .post('/api/auth/forgot-password')
+      .send({ email: testUser.email })
+
+    expect(forgotRes.status).toBe(200)
+    const devToken = forgotRes.body.data.devToken
+    expect(devToken).toBeDefined()
+
+    const resetRes = await request(app)
+      .post('/api/auth/reset-password')
+      .send({ token: devToken, password: 'ResetPassword123!' })
+
+    expect(resetRes.status).toBe(200)
+    expect(mockChangePassword).toHaveBeenCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
+
+    const updated = await prisma.user.findUnique({ where: { email: testUser.email } })
+    expect(updated?.passwordHash).not.toBe(userBefore?.passwordHash)
+    expect(updated?.nextcloudWebdavPasswordEncrypted).not.toBe(userBefore?.nextcloudWebdavPasswordEncrypted)
+    expect(decrypt(updated!.nextcloudWebdavPasswordEncrypted!)).toBe('rotated-webdav-password')
+    expect(mockChangePassword).toHaveBeenLastCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
   })
 })

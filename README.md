@@ -59,7 +59,7 @@ src/
     admin/      AdminUsersTable, CreateUserDialog, ResetPasswordDialog
   context/      AuthContext (real session handling, exposes `role`), ThemeContext,
                 ToastContext, UploadQueueContext
-  data/         plans.ts — static pricing content. dummyData.ts is unused legacy code.
+  data/         plans.ts — legacy/static marketing data retained for non-billing UI. dummyData.ts is unused legacy code.
   hooks/        useQuota, useStorageStats, useFiles, useFileMutations,
                 useAdminUsers, useAdminMutations — React Query wrappers around api/*
   lib/          api.ts (Axios instance + token/refresh interceptor), formatBytes.ts,
@@ -121,18 +121,27 @@ See `src/components/admin/AdminUsersTable.test.tsx` for coverage.
 - **Recent activity** (`RecentActivity.tsx`) — there's no activity-log
   endpoint on the backend at all, so this card doesn't fabricate anything;
   it plainly says activity tracking isn't available yet.
-- **Payments** — the backend now has a real, working Razorpay integration
-  (create-order, verify-payment, upgrade-plan, cancel-subscription — see
-  `backend/README.md`'s Phase 11A section), but there's still no frontend
-  for any of it, deliberately (out of scope for that phase). Nothing in
-  this UI calls those endpoints yet — no checkout widget, no "Upgrade" or
-  "Cancel" button wired up anywhere, including `Pricing.tsx` and Settings'
-  billing tab, both of which are still static. The admin payments view
-  (Phase 10) will show real rows once something actually calls these
-  endpoints; until then it's still an honestly-empty list, same as before.
+- **Payments** — Razorpay Subscription Checkout is now wired into `Pricing.tsx`.
+  The paid catalog is read from Razorpay through `GET /api/payments/plans`;
+  displayed paid-plan names, prices and billing cadence therefore come from
+  the provider rather than duplicated frontend constants. The backend maps
+  the configured Razorpay Basic/Pro plan IDs to Nimbus entitlement records
+  for storage/quota handling. Settings can schedule cancellation at the end
+  of the current billing period.
 - **Self-service password reset** — `forgot-password` issues a token but
   there's still no completion route or email transport (admin-driven reset,
   added in Phase 10, is a separate, already-working path).
 - **`dummyData.ts` itself** is unused dead code at this point and could be
   deleted outright — nothing imports it anymore.
 
+
+
+## Favorites
+
+Favorites are persisted in Nimbus PostgreSQL per user. The UI supports starring/unstarring files and folders, a working Favorites view, and keeps favorite paths in sync when an item is renamed, moved, or deleted. Apply the included Prisma migration before starting the backend:
+
+```bash
+cd backend
+npx prisma migrate deploy
+npx prisma generate
+```

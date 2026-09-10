@@ -258,7 +258,7 @@ describe('webhookService — payment.failed', () => {
   })
 })
 
-describe('webhookService — refund.created / refund.processed', () => {
+describe('webhookService — refund.processed', () => {
   function refund(event: string, entity: Record<string, unknown>) {
     return rawBodyFor({ event, payload: { refund: { entity } } })
   }
@@ -270,21 +270,20 @@ describe('webhookService — refund.created / refund.processed', () => {
     mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ id: 'sub-1', status: 'ACTIVE' }))
     mockCancelSubscription.mockResolvedValue({ subscription: subscriptionRow({ status: 'CANCELED' }), quotaSynced: true })
 
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
+    await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
 
     expect(mockMarkRefunded).toHaveBeenCalledWith('payment-1')
     expect(mockCancelSubscription).toHaveBeenCalledWith('user-1')
   })
 
-  it('is idempotent across refund.created followed by refund.processed for the same refund', async () => {
+  it('does not downgrade on refund.created and downgrades once refund.processed arrives', async () => {
+    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
+    expect(mockMarkRefunded).not.toHaveBeenCalled()
+    expect(mockCancelSubscription).not.toHaveBeenCalled()
+
     mockFindByProviderPaymentId.mockResolvedValueOnce(paymentRow({ status: 'SUCCEEDED', subscriptionId: 'sub-1' }))
     mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ id: 'sub-1', status: 'ACTIVE' }))
     mockCancelSubscription.mockResolvedValue({ subscription: subscriptionRow({ status: 'CANCELED' }), quotaSynced: true })
-
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
-
-    // Second delivery: the payment is now REFUNDED.
-    mockFindByProviderPaymentId.mockResolvedValueOnce(paymentRow({ status: 'REFUNDED', subscriptionId: 'sub-1' }))
 
     await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
 
@@ -298,21 +297,33 @@ describe('webhookService — refund.created / refund.processed', () => {
     )
     mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ id: 'sub-1', status: 'ACTIVE' }))
 
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
+    await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
 
     expect(mockMarkRefunded).toHaveBeenCalledWith('payment-1')
     expect(mockCancelSubscription).not.toHaveBeenCalled()
   })
 
+  it('does not downgrade the entitlement for a partial refund', async () => {
+    mockFindByProviderPaymentId.mockResolvedValue(paymentRow({ status: 'SUCCEEDED', subscriptionId: 'sub-1', amount: { toString: () => '24.99' } as any }))
+
+    await webhookService.handleRazorpayWebhook(
+      refund('refund.processed', { id: 'rfnd_partial', payment_id: 'pay_1', amount: 1000 }),
+      'sig'
+    )
+
+    expect(mockMarkRefunded).not.toHaveBeenCalled()
+    expect(mockCancelSubscription).not.toHaveBeenCalled()
+  })
+
   it('ignores a refund for a payment that was never SUCCEEDED', async () => {
     mockFindByProviderPaymentId.mockResolvedValue(paymentRow({ status: 'PENDING' }))
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
+    await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
     expect(mockMarkRefunded).not.toHaveBeenCalled()
   })
 
   it('ignores a refund for an unknown payment id', async () => {
     mockFindByProviderPaymentId.mockResolvedValue(null)
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_ghost' }), 'sig')
+    await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_ghost' }), 'sig')
     expect(mockMarkRefunded).not.toHaveBeenCalled()
   })
 
@@ -322,7 +333,7 @@ describe('webhookService — refund.created / refund.processed', () => {
     )
     mockFindSubscriptionByUserId.mockResolvedValue(subscriptionRow({ id: 'sub-1', status: 'CANCELED' }))
 
-    await webhookService.handleRazorpayWebhook(refund('refund.created', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
+    await webhookService.handleRazorpayWebhook(refund('refund.processed', { id: 'rfnd_1', payment_id: 'pay_1' }), 'sig')
 
     expect(mockMarkRefunded).toHaveBeenCalledWith('payment-1')
     expect(mockCancelSubscription).not.toHaveBeenCalled()

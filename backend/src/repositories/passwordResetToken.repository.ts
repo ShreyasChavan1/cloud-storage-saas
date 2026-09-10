@@ -24,9 +24,10 @@ export const passwordResetTokenRepository = {
     })
   },
 
-  // Invalidate any tokens issued by earlier forgot-password calls before
-  // issuing a fresh one, so only the most recent reset link is ever live.
-  deleteAllForUser(userId: string) {
-    return prisma.passwordResetToken.deleteMany({ where: { userId } })
+  // Keep the freshly-created token and invalidate all older tokens. Creating
+  // first avoids the gap where two concurrent forgot-password requests could
+  // both delete the other's token before either one creates its own.
+  deleteAllForUserExcept(userId: string, tokenHash: string) {
+    return prisma.passwordResetToken.deleteMany({ where: { userId, tokenHash: { not: tokenHash } } })
   },
 }

@@ -1,11 +1,12 @@
 import { useState, DragEvent } from 'react'
-import { Folder } from 'lucide-react'
+import { Folder, Star } from 'lucide-react'
 import { FileEntry } from '@/api/files'
 import { fileKindMeta, kindFromName } from '@/lib/fileIcons'
 import { formatBytes } from '@/lib/formatBytes'
 import { setDragEntry } from '@/lib/dragEntry'
 import { useDropToMove } from '@/hooks/useDropToMove'
 import { FileMenu } from './FileMenu'
+import { useFavoriteFile } from '@/hooks/useFileMutations'
 import { cn } from '@/lib/cn'
 
 export function EntryRow({ entry, currentPath, onOpen }: { entry: FileEntry; currentPath: string | undefined; onOpen?: () => void }) {
@@ -13,6 +14,7 @@ export function EntryRow({ entry, currentPath, onOpen }: { entry: FileEntry; cur
   const meta = !isFolder ? fileKindMeta[kindFromName(entry.name)] : null
   const Icon = meta?.icon
   const [isDragging, setIsDragging] = useState(false)
+  const favorite = useFavoriteFile(currentPath)
 
   const { isDragOver, dropHandlers } = useDropToMove(isFolder ? entry.path : undefined, currentPath)
 
@@ -50,7 +52,15 @@ export function EntryRow({ entry, currentPath, onOpen }: { entry: FileEntry; cur
       </div>
       <span className="hidden text-sm text-ink-400 sm:block">{new Date(entry.modifiedAt).toLocaleDateString()}</span>
       <span className="hidden text-sm text-ink-400 sm:block">{isFolder ? '—' : formatBytes(entry.size)}</span>
-      <div className="flex justify-end opacity-0 transition-opacity group-hover:opacity-100">
+      <div className="flex items-center justify-end gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+        <button
+          type="button"
+          aria-label={entry.favorite ? `Remove ${entry.name} from favorites` : `Add ${entry.name} to favorites`}
+          onClick={(e) => { e.stopPropagation(); favorite.mutate({ path: entry.path, favorite: !entry.favorite }) }}
+          className="rounded-lg p-1.5 text-ink-400 hover:bg-surface-100 hover:text-amber-500 dark:hover:bg-dark-surface2"
+        >
+          <Star className={cn('h-4 w-4', entry.favorite && 'fill-current text-amber-500')} />
+        </button>
         <FileMenu entry={entry} currentPath={currentPath} />
       </div>
     </div>

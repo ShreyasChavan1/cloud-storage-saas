@@ -5,6 +5,7 @@ export interface AuthUser {
   name: string
   email: string
   avatarInitials: string
+  avatarUrl?: string | null
   plan: string | null
   role: 'USER' | 'ADMIN'
 }
@@ -28,5 +29,8 @@ export const authApi = {
   refreshToken: () => api.post<{ data: AuthResponse }>('/auth/refresh-token').then((r) => r.data.data),
 
   forgotPassword: (email: string) =>
-    api.post<{ data: { message: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
+    api.post<{ data: { message: string; devToken?: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
+
+  resetPassword: (token: string, password: string) =>
+    api.post('/auth/reset-password', { token, password }).then(() => undefined),
 }

@@ -7,6 +7,7 @@ export interface FileEntry {
   size: number
   modifiedAt: string
   mimeType?: string
+  favorite?: boolean
 }
 
 export interface QuotaInfo {
@@ -24,6 +25,12 @@ export interface StorageStats {
 export const filesApi = {
   list: (path?: string) =>
     api.get<{ data: { entries: FileEntry[] } }>('/files', { params: { path } }).then((r) => r.data.data.entries),
+
+  favorites: () =>
+    api.get<{ data: { entries: FileEntry[] } }>('/files/favorites').then((r) => r.data.data.entries),
+
+  setFavorite: (path: string, favorite: boolean) =>
+    api.put<{ data: { favorite: { path: string; favorite: boolean } } }>('/files/favorite', { path, favorite }).then((r) => r.data.data.favorite),
 
   upload: (
     path: string | undefined,

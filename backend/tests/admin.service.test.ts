@@ -277,18 +277,22 @@ describe('adminService', () => {
   describe('resetPassword', () => {
     it('generates a password and returns it once when none is supplied', async () => {
       mockFindById.mockResolvedValue(userRow())
-      mockNcChangePassword.mockResolvedValue(undefined)
+      mockNcChangePassword.mockResolvedValue({ webdavPassword: 'rotated-webdav-password' })
       mockUpdate.mockResolvedValue(userRow())
 
       const result = await adminService.resetPassword(USER_ID, undefined)
 
+      expect(mockUpdate).toHaveBeenCalledWith(USER_ID, expect.objectContaining({
+        passwordHash: expect.any(String),
+        nextcloudWebdavPasswordEncrypted: expect.any(String),
+      }))
       expect(result.temporaryPassword).toEqual(expect.any(String))
       expect(result.temporaryPassword!.length).toBeGreaterThanOrEqual(8)
     })
 
     it('does not echo back an admin-supplied password', async () => {
       mockFindById.mockResolvedValue(userRow())
-      mockNcChangePassword.mockResolvedValue(undefined)
+      mockNcChangePassword.mockResolvedValue({ webdavPassword: 'rotated-webdav-password' })
       mockUpdate.mockResolvedValue(userRow())
 
       const result = await adminService.resetPassword(USER_ID, 'a-chosen-password-1')
@@ -307,7 +311,7 @@ describe('adminService', () => {
 
     it('revokes all sessions after a successful reset', async () => {
       mockFindById.mockResolvedValue(userRow())
-      mockNcChangePassword.mockResolvedValue(undefined)
+      mockNcChangePassword.mockResolvedValue({ webdavPassword: 'rotated-webdav-password' })
       mockUpdate.mockResolvedValue(userRow())
 
       await adminService.resetPassword(USER_ID, 'whatever12')

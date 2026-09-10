@@ -56,6 +56,11 @@ export const authController = {
     return sendSuccess(res, result, 200)
   }),
 
+  resetPassword: asyncHandler(async (req: Request, res: Response) => {
+    await authService.resetPassword(req.body.token, req.body.password)
+    return sendSuccess(res, { message: 'Password reset successfully.' })
+  }),
+
   forgotPassword: asyncHandler(async (req: Request, res: Response) => {
     const { devToken } = await authService.forgotPassword(req.body)
 
@@ -63,7 +68,7 @@ export const authController = {
     // which one it was.
     return sendSuccess(res, {
       message: 'If an account exists for that email, a reset link has been sent.',
-      // Only present outside production, and only while no mailer exists.
+      // Only present outside production when no mail transport is configured.
       ...(devToken ? { devToken } : {}),
     })
   }),

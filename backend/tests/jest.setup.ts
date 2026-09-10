@@ -21,3 +21,5 @@ process.env.CREDENTIAL_ENCRYPTION_KEY ??= 'a'.repeat(64)
 process.env.RAZORPAY_KEY_ID ??= 'rzp_test_not_for_real_use'
 process.env.RAZORPAY_KEY_SECRET ??= 'test-razorpay-secret-not-for-real-use'
 process.env.RAZORPAY_WEBHOOK_SECRET ??= 'test-razorpay-webhook-secret-not-real'
+process.env.RAZORPAY_PLAN_BASIC_ID ??= 'plan_basic_test'
+process.env.RAZORPAY_PLAN_PRO_ID ??= 'plan_pro_test'

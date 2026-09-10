@@ -15,6 +15,7 @@ export function toAuthUserDTO(user: UserWithPlan): AuthUserDTO {
     name: user.name,
     email: user.email,
     avatarInitials: initialsFromName(user.name),
+    avatarUrl: user.avatarData ?? null,
     plan: user.plan?.name ?? null,
     role: user.role,
   }

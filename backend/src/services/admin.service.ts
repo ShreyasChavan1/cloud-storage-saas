@@ -12,6 +12,7 @@ import { toSessionDTO, SessionDTO } from '../models/session.model'
 import { toPaymentDTO, PaymentDTO } from '../models/payment.model'
 import { toPlanDTO, PlanDTO } from '../models/plan.model'
 import { hashPassword } from '../utils/password'
+import { encrypt } from '../utils/encryption'
 import { generateRandomToken } from '../utils/token'
 import { ApiError } from '../utils/ApiError'
 import { logger } from '../config/logger'
@@ -166,15 +167,20 @@ export const adminService = {
     // completely untouched, so the login password and the Nextcloud
     // account password can never drift out of sync with each other (see
     // backend/README.md's note on why register() keeps them paired).
+    let webdavPassword: string
     try {
-      await nextcloudService.changePassword(target.nextcloudUsername, finalPassword)
+      const result = await nextcloudService.changePassword(target.nextcloudUsername, finalPassword)
+      webdavPassword = result.webdavPassword
     } catch (err) {
       const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
       logger.error({ userId: id, detail }, 'Nextcloud password change failed — Postgres password left unchanged')
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
 
-    await userRepository.update(id, { passwordHash: await hashPassword(finalPassword) })
+    await userRepository.update(id, {
+      passwordHash: await hashPassword(finalPassword),
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
 
     // An existing session shouldn't keep coasting on the credential that
     // was just invalidated — force everything back through a fresh login.

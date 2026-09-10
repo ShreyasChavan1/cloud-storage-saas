@@ -3,6 +3,9 @@ import { userRepository } from '../repositories/user.repository'
 import { sessionRepository } from '../repositories/session.repository'
 import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
 import { provisionUser } from './userProvisioning.service'
+import { nextcloudService } from './NextcloudService'
+import { hashPassword } from '../utils/password'
+import { encrypt } from '../utils/encryption'
 import { toAuthUserDTO } from '../models/user.model'
 import { comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
@@ -12,6 +15,7 @@ import { env } from '../config/env'
 import { logger } from '../config/logger'
 import { RegisterInput, LoginInput, ForgotPasswordInput } from '../validators/auth.validator'
 import { AuthResponseDTO } from '../types/auth.types'
+import { sendPasswordResetEmail } from './email.service'
 
 // Best-effort request metadata, captured once at token-issue time and
 // shown on Phase 10's admin "active sessions" view — see
@@ -139,21 +143,92 @@ export const authService = {
       return {}
     }
 
-    // Only one live reset link at a time.
-    await passwordResetTokenRepository.deleteAllForUser(user.id)
-
     const rawToken = generateRandomToken()
     const expiresAt = new Date(Date.now() + ms(env.PASSWORD_RESET_TOKEN_EXPIRES_IN))
-    await passwordResetTokenRepository.create(user.id, hashToken(rawToken), expiresAt)
+    const tokenHash = hashToken(rawToken)
+    await passwordResetTokenRepository.create(user.id, tokenHash, expiresAt)
+    await passwordResetTokenRepository.deleteAllForUserExcept(user.id, tokenHash)
 
-    // No email transport is wired up yet — log it so it's visible in dev,
-    // and hand it back in the response ONLY outside production so you can
-    // test the flow. Wire up a real mailer before shipping this.
-    logger.info({ email: user.email }, 'Password reset token issued (email delivery not yet implemented)')
+    const resetUrl = `${env.CLIENT_RESET_URL}?token=${encodeURIComponent(rawToken)}`
+    try {
+      await sendPasswordResetEmail(user.email, resetUrl)
+    } catch (err) {
+      // Never turn mail-delivery state into an account-enumeration side channel.
+      // The token remains valid so a transient Resend outage can be retried by
+      // the user without changing the account state again.
+      logger.error({ err, userId: user.id }, 'Password reset email delivery failed')
+      if (env.NODE_ENV === 'production') return {}
+    }
 
-    if (env.NODE_ENV !== 'production') {
+    if (env.NODE_ENV !== 'production' && (!env.RESEND_API_KEY || !env.EMAIL_FROM)) {
       return { devToken: rawToken }
     }
     return {}
+  },
+
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    const stored = await passwordResetTokenRepository.findValidByHash(hashToken(token))
+    if (!stored) throw ApiError.badRequest('This password reset link is invalid or has expired.')
+
+    const user = await userRepository.findById(stored.userId)
+    if (!user) throw ApiError.badRequest('This password reset link is invalid or has expired.')
+
+    let webdavPassword: string
+    try {
+      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
+      webdavPassword = result.webdavPassword
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'unknown error'
+      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
+    }
+    await userRepository.update(user.id, {
+      passwordHash: await hashPassword(newPassword),
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
+    await passwordResetTokenRepository.markUsed(stored.id)
+    await sessionRepository.deleteAllForUser(user.id)
+  },
+
+  async repairWebdavPassword(userId: string, currentPassword: string): Promise<void> {
+    const user = await userRepository.findById(userId)
+    if (!user) throw ApiError.notFound('User not found')
+    if (!(await comparePassword(currentPassword, user.passwordHash))) {
+      throw ApiError.unauthorized('Current password is incorrect')
+    }
+    let webdavPassword: string
+    try {
+      const result = await nextcloudService.refreshWebdavPassword(user.nextcloudUsername ?? user.id, currentPassword)
+      webdavPassword = result.webdavPassword
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'unknown error'
+      logger.error({ userId, detail }, 'Nextcloud WebDAV credential repair failed')
+      throw ApiError.serviceUnavailable('Could not repair the storage connection. Please try again.')
+    }
+    await userRepository.update(userId, {
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
+  },
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string): Promise<void> {
+    const user = await userRepository.findById(userId)
+    if (!user) throw ApiError.notFound('User not found')
+    if (!(await comparePassword(currentPassword, user.passwordHash))) {
+      throw ApiError.unauthorized('Current password is incorrect')
+    }
+    let webdavPassword: string
+    try {
+      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
+      webdavPassword = result.webdavPassword
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : 'unknown error'
+      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
+    }
+    await userRepository.update(user.id, {
+      passwordHash: await hashPassword(newPassword),
+      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+    })
+    await sessionRepository.deleteAllForUser(user.id)
   },
 }

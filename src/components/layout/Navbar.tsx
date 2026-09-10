@@ -66,7 +66,7 @@ export function Navbar({ onMenuClick }: { onMenuClick: () => void }) {
           align="end"
           trigger={
             <button className="rounded-full">
-              <Avatar initials={user?.avatarInitials ?? 'NB'} />
+              <Avatar initials={user?.avatarInitials ?? 'NB'} avatarUrl={user?.avatarUrl} />
             </button>
           }
           items={[

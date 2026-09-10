@@ -62,6 +62,16 @@ describe('NextcloudService (agent HTTP client)', () => {
     expect(options.method).toBe('DELETE')
   })
 
+  it('changePassword returns the fresh WebDAV credential from the agent', async () => {
+    fetchMock().mockResolvedValueOnce(jsonResponse(200, { success: true, webdavPassword: 'fresh-token' }))
+    const result = await nextcloudService.changePassword('abc-123', 'new-password')
+    expect(result).toEqual({ webdavPassword: 'fresh-token' })
+    const [url, options] = fetchMock().mock.calls[0]
+    expect(url).toContain('/internal/users/abc-123/password')
+    expect(options.method).toBe('PUT')
+    expect(JSON.parse(options.body)).toEqual({ password: 'new-password' })
+  })
+
   it('getQuota returns the parsed quota object', async () => {
     fetchMock().mockResolvedValueOnce(jsonResponse(200, { quota: '5 GB' }))
     const result = await nextcloudService.getQuota('abc-123')

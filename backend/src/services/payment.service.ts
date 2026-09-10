@@ -121,6 +121,7 @@ async function cancelSupersededBillingSubscriptions(userId: string, keepId: stri
       await billingSubscriptionRepository.updateStatus(row.id, 'CANCELLED')
     } catch (err) {
       logger.error({ userId, billingSubscriptionId: row.id, err }, 'Failed to cancel superseded Razorpay subscription')
+      throw ApiError.serviceUnavailable('Could not safely replace the existing autopay subscription. Please try again.')
     }
   }
 }
@@ -137,6 +138,11 @@ async function activateBillingSubscription(
   const plan = await planRepository.findById(billing.planId)
   if (!plan) throw ApiError.internal('The plan for this subscription no longer exists')
 
+  // Do not grant the new local entitlement until older provider mandates
+  // have been cancelled. Otherwise a failed cancellation can leave two live
+  // Razorpay mandates charging the same customer.
+  await cancelSupersededBillingSubscriptions(billing.userId, billing.id)
+
   const result = await applyPlanChange(billing.userId, plan, 'ACTIVE')
   const providerEnd = currentEnd ? new Date(currentEnd * 1000) : result.subscription.renewalDate
   await prisma.subscription.update({ where: { id: result.subscription.id }, data: { renewalDate: providerEnd } })
@@ -145,7 +151,6 @@ async function activateBillingSubscription(
     currentEnd: providerEnd,
     chargeAt: chargeAt ? new Date(chargeAt * 1000) : providerEnd,
   })
-  await cancelSupersededBillingSubscriptions(billing.userId, billing.id)
   await billingSubscriptionRepository.attachLocalSubscription(billing.id, result.subscription.id)
 
   const subscription = await subscriptionRepository.findByUserId(billing.userId)
@@ -155,8 +160,43 @@ async function activateBillingSubscription(
 
 export const paymentService = {
   async listPlans() {
-    const plans = await planRepository.findAll()
-    return plans.map((plan) => ({ id: plan.id, name: plan.name, storageLimitGb: plan.storageLimit, price: plan.price.toString() }))
+    // Razorpay is the billing catalog source of truth. Nimbus still needs a
+    // local Plan row for storage/quota entitlement and FK relationships, so
+    // only Razorpay plans that map to one of our local paid plans are exposed.
+    const [razorpayPlans, localPlans] = await Promise.all([
+      razorpayService.listPlans(),
+      planRepository.findAll(),
+    ])
+
+    const localByName = new Map(localPlans.map((plan) => [plan.name.toLowerCase(), plan]))
+    const configuredIds = new Map<string, string>()
+    if (env.RAZORPAY_PLAN_BASIC_ID) configuredIds.set(env.RAZORPAY_PLAN_BASIC_ID, 'basic')
+    if (env.RAZORPAY_PLAN_PRO_ID) configuredIds.set(env.RAZORPAY_PLAN_PRO_ID, 'pro')
+
+    return razorpayPlans
+      .filter((rp) => configuredIds.has(rp.id))
+      .filter((rp) => rp.item?.active !== false)
+      .filter((rp) => !rp.item?.currency || rp.item.currency === env.RAZORPAY_CURRENCY)
+      .filter((rp) => rp.period === 'monthly')
+      .map((rp) => {
+        const localPlan = localByName.get(configuredIds.get(rp.id)!)
+        if (!localPlan || Number(localPlan.price) <= 0) return null
+
+        const amount = Number(rp.item.unit_amount ?? rp.item.amount)
+        return {
+          id: rp.id,
+          localPlanId: localPlan.id,
+          localPlanName: localPlan.name,
+          name: rp.item.name,
+          description: rp.item.description ?? '',
+          storageLimitGb: localPlan.storageLimit,
+          price: (amount / 100).toFixed(2),
+          currency: rp.item.currency || env.RAZORPAY_CURRENCY,
+          interval: rp.interval,
+          period: rp.period,
+        }
+      })
+      .filter((plan): plan is NonNullable<typeof plan> => plan !== null)
   },
 
   async createSubscription(
@@ -173,8 +213,18 @@ export const paymentService = {
       throw ApiError.badRequest('You already have an active autopay subscription for this plan')
     }
 
+    const providerPlanId = razorpayPlanIdFor(plan.name)
+    const providerPlan = await razorpayService.fetchPlan(providerPlanId)
+    if (!providerPlan.item.active) throw ApiError.serviceUnavailable('The selected Razorpay plan is inactive.')
+    if (providerPlan.period !== 'monthly' || providerPlan.interval !== 1) {
+      throw ApiError.internal(`Razorpay plan for ${plan.name} must be monthly`)
+    }
+    if (providerPlan.item.currency !== env.RAZORPAY_CURRENCY) {
+      throw ApiError.internal(`Razorpay plan for ${plan.name} uses ${providerPlan.item.currency}, expected ${env.RAZORPAY_CURRENCY}`)
+    }
+
     const razorpay = await razorpayService.createSubscription({
-      planId: razorpayPlanIdFor(plan.name),
+      planId: providerPlanId,
       totalCount: RAZORPAY_SUBSCRIPTION_TOTAL_COUNT,
       quantity: 1,
       customerNotify: true,
@@ -203,8 +253,8 @@ export const paymentService = {
       keyId: razorpayService.keyId,
       planId: plan.id,
       planName: plan.name,
-      amount: Math.round(Number(plan.price) * 100),
-      currency: env.RAZORPAY_CURRENCY,
+      amount: Number(providerPlan.item.unit_amount ?? providerPlan.item.amount),
+      currency: providerPlan.item.currency,
     }
   },
 
@@ -228,15 +278,40 @@ export const paymentService = {
       throw ApiError.conflict(`Razorpay subscription is already ${billing.status.toLowerCase()}`)
     }
 
+    const providerSubscription = await razorpayService.fetchSubscription(input.razorpaySubscriptionId)
+    const providerPlanId = razorpayPlanIdFor(billing.plan.name)
+    if (providerSubscription.planId !== providerPlanId) {
+      throw ApiError.conflict('The Razorpay subscription is linked to a different plan')
+    }
+    if (!['authenticated', 'active'].includes(providerSubscription.status)) {
+      throw ApiError.conflict(`Razorpay subscription is not ready for activation (${providerSubscription.status})`)
+    }
+
+    const providerPayment = await razorpayService.fetchPayment(input.razorpayPaymentId)
+    if (providerPayment.id !== input.razorpayPaymentId || !['captured', 'authorized'].includes(providerPayment.status)) {
+      throw ApiError.badRequest('Razorpay authorization payment is not valid')
+    }
+    if (providerPayment.currency !== env.RAZORPAY_CURRENCY) {
+      throw ApiError.badRequest('Razorpay payment currency does not match the configured currency')
+    }
+
     const plan = await planRepository.findById(billing.planId)
     if (!plan) throw ApiError.internal('The plan for this subscription no longer exists')
+
+    const providerPlan = await razorpayService.fetchPlan(providerSubscription.planId)
+    if (!providerPlan.item.active || providerPlan.period !== 'monthly' || providerPlan.interval !== 1) {
+      throw ApiError.conflict('The Razorpay subscription plan is not active monthly billing')
+    }
+    if (providerPlan.item.currency !== env.RAZORPAY_CURRENCY) {
+      throw ApiError.badRequest('Razorpay subscription currency does not match the configured currency')
+    }
 
     const { subscription, quotaSynced } = await activateBillingSubscription(billing.id)
     const existingPayment = await paymentRepository.findByProviderPaymentId(input.razorpayPaymentId)
     const payment = existingPayment ?? await paymentRepository.createSucceeded({
       userId,
       planId: plan.id,
-      amount: plan.price,
+      amount: Number(providerPlan.item.unit_amount ?? providerPlan.item.amount) / 100,
       provider: 'razorpay',
       providerPaymentId: input.razorpayPaymentId,
       subscriptionId: subscription.id,
@@ -421,6 +496,18 @@ export const paymentService = {
       throw ApiError.badRequest('Invalid payment signature')
     }
 
+    const providerPayment = await razorpayService.fetchPayment(input.razorpayPaymentId)
+    if (providerPayment.orderId !== input.razorpayOrderId) {
+      await paymentRepository.markFailed(payment.id)
+      throw ApiError.badRequest('Razorpay payment does not belong to this order')
+    }
+    if (providerPayment.status !== 'captured') {
+      throw ApiError.conflict(`Razorpay payment is ${providerPayment.status}, not captured`)
+    }
+    if (providerPayment.currency !== env.RAZORPAY_CURRENCY) {
+      throw ApiError.badRequest('Razorpay payment currency does not match the configured currency')
+    }
+
     if (!payment.planId) {
       // Not reachable — createOrder always sets this — but upgrading to
       // "nothing" would be a worse failure mode than an explicit error.
@@ -428,6 +515,12 @@ export const paymentService = {
     }
     const plan = await planRepository.findById(payment.planId)
     if (!plan) throw ApiError.internal('The plan for this payment no longer exists')
+
+    const expectedAmount = Math.round(Number(plan.price) * 100)
+    if (providerPayment.amount !== expectedAmount) {
+      await paymentRepository.markFailed(payment.id)
+      throw ApiError.badRequest('Razorpay payment amount does not match the selected plan')
+    }
 
     const { subscription, quotaSynced } = await applyPlanChange(userId, plan, 'ACTIVE')
 
@@ -563,7 +656,7 @@ export const paymentService = {
         throw ApiError.badRequest('Cancellation is already scheduled for the end of the current billing period')
       }
       const activeBilling = await billingSubscriptionRepository.findActiveForUser(userId)
-      if (activeBilling && ['ACTIVE', 'AUTHENTICATED'].includes(activeBilling.status)) {
+      if (activeBilling && activeBilling.status === 'ACTIVE') {
         await razorpayService.cancelSubscription(activeBilling.razorpaySubscriptionId, true)
       }
       // No plan/quota change at all here — that's the whole point of
@@ -579,7 +672,7 @@ export const paymentService = {
     }
 
     const activeBilling = await billingSubscriptionRepository.findActiveForUser(userId)
-    if (activeBilling && ['ACTIVE', 'AUTHENTICATED', 'PENDING'].includes(activeBilling.status)) {
+    if (activeBilling && ['CREATED', 'AUTHENTICATED', 'ACTIVE', 'PENDING', 'HALTED'].includes(activeBilling.status)) {
       await razorpayService.cancelSubscription(activeBilling.razorpaySubscriptionId, false)
       await billingSubscriptionRepository.updateStatus(activeBilling.id, 'CANCELLED')
     }
@@ -599,6 +692,14 @@ export const paymentService = {
     const freePlan = await planRepository.findByName(DEFAULT_PLAN_NAME)
     if (!freePlan) {
       throw ApiError.internal(`Default plan "${DEFAULT_PLAN_NAME}" not found. Run "npm run prisma:seed".`)
+    }
+
+    const billing = await billingSubscriptionRepository.findActiveForUser(userId)
+    if (billing && ['CREATED', 'AUTHENTICATED', 'ACTIVE', 'PENDING', 'HALTED'].includes(billing.status)) {
+      // Stop any provider mandate that might still charge after a missed
+      // webhook or failed renewal has caused local expiry.
+      await razorpayService.cancelSubscription(billing.razorpaySubscriptionId, false)
+      await billingSubscriptionRepository.updateStatus(billing.id, 'CANCELLED')
     }
 
     const { subscription, quotaSynced } = await applyPlanChange(userId, freePlan, 'EXPIRED')

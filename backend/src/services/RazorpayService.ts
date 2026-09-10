@@ -134,6 +134,114 @@ export const razorpayService = {
     return crypto.timingSafeEqual(expected, provided)
   },
 
+  /**
+   * Returns the merchant's Razorpay subscription plans. The Dashboard is
+   * the source of truth for plan name, amount and billing cadence; Nimbus
+   * only exposes plans that are active and mapped to a local entitlement.
+   */
+  async listPlans(): Promise<Array<{
+    id: string
+    interval: number
+    period: string
+    item: {
+      active: boolean
+      name: string
+      description: string | null
+      amount: number
+      unit_amount: number
+      currency: string
+    }
+    notes: Record<string, string>
+  }>> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    const items: Array<{ id: string; interval: number; period: string; item: { active: boolean; name: string; description: string | null; amount: number; unit_amount: number; currency: string }; notes: Record<string, string> }> = []
+
+    for (let skip = 0; ; skip += 100) {
+      let res: Response
+      try {
+        res = await fetch(`https://api.razorpay.com/v1/plans?count=100&skip=${skip}`, {
+          method: 'GET',
+          headers: { Authorization: `Basic ${auth}` },
+        })
+      } catch (err) {
+        throw new RazorpayApiError('Could not reach Razorpay Plans API', err)
+      }
+
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+        throw new RazorpayApiError(`Could not fetch Razorpay plans (${detail})`)
+      }
+
+      const body = await res.json() as { items?: typeof items }
+      const page = body.items ?? []
+      items.push(...page)
+      if (page.length < 100) break
+    }
+
+    return items
+  },
+
+  async fetchPayment(paymentId: string): Promise<{ id: string; orderId: string | null; amount: number; currency: string; status: string }> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    let res: Response
+    try {
+      res = await fetch(`https://api.razorpay.com/v1/payments/${encodeURIComponent(paymentId)}`, {
+        method: 'GET',
+        headers: { Authorization: `Basic ${auth}` },
+      })
+    } catch (err) {
+      throw new RazorpayApiError('Could not reach Razorpay Payments API', err)
+    }
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+      throw new RazorpayApiError(`Could not fetch Razorpay payment (${detail})`)
+    }
+    const body = await res.json() as { id: string; order_id?: string | null; amount: number; currency: string; status: string }
+    return { id: body.id, orderId: body.order_id ?? null, amount: Number(body.amount), currency: body.currency, status: body.status }
+  },
+
+  async fetchSubscription(subscriptionId: string): Promise<{ id: string; planId: string; status: string; currentStart: number | null; currentEnd: number | null; chargeAt: number | null }> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    let res: Response
+    try {
+      res = await fetch(`https://api.razorpay.com/v1/subscriptions/${encodeURIComponent(subscriptionId)}`, {
+        method: 'GET',
+        headers: { Authorization: `Basic ${auth}` },
+      })
+    } catch (err) {
+      throw new RazorpayApiError('Could not reach Razorpay Subscriptions API', err)
+    }
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+      throw new RazorpayApiError(`Could not fetch Razorpay subscription (${detail})`)
+    }
+    const body = await res.json() as { id: string; plan_id: string; status: string; current_start?: number | null; current_end?: number | null; charge_at?: number | null }
+    return { id: body.id, planId: body.plan_id, status: body.status, currentStart: body.current_start ?? null, currentEnd: body.current_end ?? null, chargeAt: body.charge_at ?? null }
+  },
+
+  async fetchPlan(planId: string): Promise<{ id: string; interval: number; period: string; item: { active: boolean; amount: number; unit_amount: number; currency: string; name: string; description: string | null } }> {
+    const auth = Buffer.from(`${env.RAZORPAY_KEY_ID}:${env.RAZORPAY_KEY_SECRET}`).toString('base64')
+    let res: Response
+    try {
+      res = await fetch(`https://api.razorpay.com/v1/plans/${encodeURIComponent(planId)}`, {
+        method: 'GET',
+        headers: { Authorization: `Basic ${auth}` },
+      })
+    } catch (err) {
+      throw new RazorpayApiError('Could not reach Razorpay Plans API', err)
+    }
+    if (!res.ok) {
+      let detail = `HTTP ${res.status}`
+      try { const body = await res.json() as { error?: { description?: string } }; detail = body.error?.description ?? detail } catch {}
+      throw new RazorpayApiError(`Could not fetch Razorpay plan (${detail})`)
+    }
+    const body = await res.json() as { id: string; interval: number; period: string; item: { active: boolean; amount: number; unit_amount: number; currency: string; name: string; description?: string | null } }
+    return { ...body, item: { ...body.item, description: body.item.description ?? null } }
+  },
+
   async createSubscription(params: {
     planId: string
     totalCount: number

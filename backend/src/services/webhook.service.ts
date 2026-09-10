@@ -32,6 +32,7 @@ interface RazorpayRefundEntity {
   id: string
   payment_id: string
   status: string
+  amount?: number
 }
 
 interface RazorpaySubscriptionEntity {
@@ -130,6 +131,8 @@ async function dispatch(evt: RazorpayWebhookPayload): Promise<void> {
     case 'payment.failed':
       return handlePaymentFailed(evt)
     case 'refund.created':
+      logger.info({ event: evt.event }, 'Refund created — waiting for definitive processed event')
+      return
     case 'refund.processed':
       return handleRefund(evt)
     case 'order.paid':
@@ -257,6 +260,16 @@ async function handleRefund(evt: RazorpayWebhookPayload): Promise<void> {
     logger.warn(
       { paymentId: payment.id, status: payment.status },
       'refund event for a payment that was never SUCCEEDED — ignoring'
+    )
+    return
+  }
+
+  // refund.processed is the definitive final outcome. Partial refunds do not
+  // justify removing a user's full subscription entitlement.
+  if (entity.amount != null && entity.amount < Number(payment.amount) * 100) {
+    logger.warn(
+      { paymentId: payment.id, refundAmount: entity.amount / 100, paymentAmount: Number(payment.amount) },
+      'Partial refund processed — payment remains active'
     )
     return
   }

@@ -54,9 +54,12 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn()
   } catch (err) {
-    const status = (err as { status?: number; response?: { status?: number } })?.status
-    const responseStatus = (err as { response?: { status?: number } })?.response?.status
-    const statusCode = status ?? responseStatus
+    const davErr = err as {
+      status?: number
+      statusCode?: number
+      response?: { status?: number; statusCode?: number }
+    }
+    const statusCode = davErr.status ?? davErr.statusCode ?? davErr.response?.status ?? davErr.response?.statusCode
     const message = err instanceof Error ? err.message : 'WebDAV request failed'
     throw new WebDavError(message, statusCode)
   }
