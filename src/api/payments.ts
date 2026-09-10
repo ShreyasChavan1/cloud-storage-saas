@@ -22,6 +22,16 @@ export interface CreateSubscriptionResponse {
   currency: string
 }
 
+export interface SubscriptionInfo {
+  id: string
+  status: 'PENDING' | 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'TRIALING' | 'EXPIRED'
+  plan: string
+  storageLimitGb: number
+  renewalDate: string
+  quotaSyncedAt: string | null
+  cancelAtPeriodEnd: boolean
+}
+
 export interface VerifySubscriptionResponse {
   payment: unknown
   subscription: unknown
@@ -29,6 +39,9 @@ export interface VerifySubscriptionResponse {
 }
 
 export const paymentsApi = {
+  getSubscription: () =>
+    api.get<{ data: { subscription: SubscriptionInfo | null } }>('/payments/subscription').then((r) => r.data.data.subscription),
+
   listPlans: () =>
     api.get<{ data: { plans: BillingPlan[] } }>('/payments/plans').then((r) => r.data.data.plans),
 

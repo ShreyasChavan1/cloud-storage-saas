@@ -6,6 +6,7 @@ export interface SubscriptionDTO {
   id: string
   status: 'PENDING' | 'ACTIVE' | 'CANCELED' | 'PAST_DUE' | 'TRIALING' | 'EXPIRED'
   plan: string
+  storageLimitGb: number
   renewalDate: string
   // Null means the plan/subscription change itself succeeded but the
   // Nextcloud quota update that should accompany it hasn't landed yet —
@@ -23,6 +24,7 @@ export function toSubscriptionDTO(subscription: SubscriptionWithPlan): Subscript
     id: subscription.id,
     status: subscription.status,
     plan: subscription.plan.name,
+    storageLimitGb: subscription.plan.storageLimit,
     renewalDate: subscription.renewalDate.toISOString(),
     quotaSyncedAt: subscription.quotaSyncedAt?.toISOString() ?? null,
     cancelAtPeriodEnd: subscription.cancelAtPeriodEnd,

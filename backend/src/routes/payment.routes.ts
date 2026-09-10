@@ -21,6 +21,8 @@ router.get('/plans', paymentController.listPlans)
 
 router.use(requireAuth)
 
+router.get('/subscription', paymentController.getSubscription)
+
 router.post('/create-subscription', validate(createSubscriptionSchema), paymentController.createSubscription)
 router.post('/verify-subscription', validate(verifySubscriptionSchema), paymentController.verifySubscription)
 

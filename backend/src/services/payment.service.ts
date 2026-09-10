@@ -159,6 +159,10 @@ async function activateBillingSubscription(
 }
 
 export const paymentService = {
+  async getSubscription(userId: string): Promise<SubscriptionWithPlan | null> {
+    return subscriptionRepository.findByUserId(userId)
+  },
+
   async listPlans() {
     // Razorpay is the billing catalog source of truth. Nimbus still needs a
     // local Plan row for storage/quota entitlement and FK relationships, so

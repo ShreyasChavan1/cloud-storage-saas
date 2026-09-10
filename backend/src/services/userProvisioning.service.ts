@@ -91,7 +91,7 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
     await userRepository.delete(user.id)
     const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
     logger.error({ userId: user.id, detail }, 'Nextcloud provisioning failed — rolled back Postgres user')
-    throw ApiError.serviceUnavailable('Password is too weak. Please choose a stronger password.')
+    throw ApiError.serviceUnavailable('Could not set up the storage account. Please try again.')
   }
 
   // 3. Store the Nextcloud username and encrypted WebDAV credential. If the

@@ -5,6 +5,7 @@ import { RecentFiles } from '@/components/dashboard/RecentFiles'
 import { RecentActivity } from '@/components/dashboard/RecentActivity'
 import { LargestFiles } from '@/components/dashboard/LargestFiles'
 import { UpgradeCard } from '@/components/dashboard/UpgradeCard'
+import { StorageStatusBanner } from '@/components/dashboard/StorageStatusBanner'
 
 export default function Dashboard() {
   const { user } = useAuth()
@@ -16,6 +17,8 @@ export default function Dashboard() {
         <h1 className="text-2xl font-bold sm:text-3xl">Welcome back, {firstName} 👋</h1>
         <p className="text-ink-500 dark:text-ink-400">Here's what's happening with your files today.</p>
       </div>
+
+      <StorageStatusBanner />
 
       <div className="mt-6 grid grid-cols-1 gap-5 lg:grid-cols-3">
         <StorageCard />

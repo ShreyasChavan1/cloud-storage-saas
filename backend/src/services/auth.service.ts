@@ -223,7 +223,7 @@ export const authService = {
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'unknown error'
       logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
-      throw ApiError.serviceUnavailable('The new password does not meet the storage provider’s password requirements.')
+      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
     await userRepository.update(user.id, {
       passwordHash: await hashPassword(newPassword),

@@ -91,27 +91,19 @@ export const cctvService = {
   },
 
   async uploadFromGateway(token: string, filename: string, filePath: string, size: number, recordedAt?: Date) {
-    // Whole body wrapped in try/finally: multer has already written filePath
-    // to disk (up to 1GB, see cctv.routes.ts) by the time this runs, so every
-    // exit path — bad/missing token, unknown device, duplicate upload, a
-    // provisioning error, or a WebDAV failure — must still unlink it. Any
-    // early `throw`/`return` above the old inner try left the temp file
-    // behind permanently, which let an unauthenticated caller fill the
-    // disk with repeated bogus requests (each one a leaked file, since
-    // most requests here never carry a valid token).
+    if (!token || token.length < 20) throw ApiError.unauthorized('Invalid CCTV gateway token')
+    const device = await cctvRepository.findByTokenHash(hashToken(token))
+    if (!device || device.status !== 'ACTIVE') throw ApiError.unauthorized('Invalid or disabled CCTV gateway')
+    await cctvRepository.touchSeen(device.id)
+    const safeName = cleanFilename(filename)
+    const existing = await cctvRepository.findUpload(device.id, safeName)
+    if (existing) return { duplicate: true, path: existing.path }
+    const user = await userRepository.findById(device.userId)
+    if (!user || !user.nextcloudUsername || !user.nextcloudWebdavPasswordEncrypted) throw ApiError.serviceUnavailable('Storage account is not provisioned')
+    const day = recordedAt ?? new Date()
+    const folder = sanitizeDavPath(`/CCTV/${device.name}/${day.getUTCFullYear()}/${String(day.getUTCMonth()+1).padStart(2,'0')}/${String(day.getUTCDate()).padStart(2,'0')}`)
+    const destination = sanitizeDavPath(posix.join(folder, safeName))
     try {
-      if (!token || token.length < 20) throw ApiError.unauthorized('Invalid CCTV gateway token')
-      const device = await cctvRepository.findByTokenHash(hashToken(token))
-      if (!device || device.status !== 'ACTIVE') throw ApiError.unauthorized('Invalid or disabled CCTV gateway')
-      await cctvRepository.touchSeen(device.id)
-      const safeName = cleanFilename(filename)
-      const existing = await cctvRepository.findUpload(device.id, safeName)
-      if (existing) return { duplicate: true, path: existing.path }
-      const user = await userRepository.findById(device.userId)
-      if (!user || !user.nextcloudUsername || !user.nextcloudWebdavPasswordEncrypted) throw ApiError.serviceUnavailable('Storage account is not provisioned')
-      const day = recordedAt ?? new Date()
-      const folder = sanitizeDavPath(`/CCTV/${device.name}/${day.getUTCFullYear()}/${String(day.getUTCMonth()+1).padStart(2,'0')}/${String(day.getUTCDate()).padStart(2,'0')}`)
-      const destination = sanitizeDavPath(posix.join(folder, safeName))
       const davPassword = decrypt(user.nextcloudWebdavPasswordEncrypted)
       const parts = folder.split('/').filter(Boolean)
       let current = ''

@@ -2,12 +2,17 @@ import { Request, Response } from 'express'
 import { paymentService } from '../services/payment.service'
 import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
+import { toSubscriptionDTO } from '../models/subscription.model'
 import { CreateOrderInput, VerifyPaymentInput, UpgradePlanInput, CancelSubscriptionInput, CreateSubscriptionInput, VerifySubscriptionInput } from '../validators/payment.validator'
 
 export const paymentController = {
   listPlans: asyncHandler(async (_req: Request, res: Response) => {
     const plans = await paymentService.listPlans()
     return sendSuccess(res, { plans })
+  }),
+  getSubscription: asyncHandler(async (req: Request, res: Response) => {
+    const subscription = await paymentService.getSubscription(req.user!.sub)
+    return sendSuccess(res, { subscription: subscription ? toSubscriptionDTO(subscription) : null })
   }),
   createSubscription: asyncHandler(async (req: Request, res: Response) => {
     const result = await paymentService.createSubscription(req.user!.sub, req.body as CreateSubscriptionInput)
