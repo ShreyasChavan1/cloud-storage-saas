@@ -59,6 +59,53 @@ enum PaymentStatus {
   REFUNDED
 }
 
+
+enum CctvDeviceStatus {
+  PROVISIONING
+  ACTIVE
+  DISABLED
+}
+
+model CctvDevice {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name String
+  tokenHash String? @unique @map("token_hash")
+  tokenPrefix String @map("token_prefix")
+  enrollmentCodeHash String? @unique @map("enrollment_code_hash")
+  enrollmentExpiresAt DateTime? @map("enrollment_expires_at")
+  gatewayId String? @map("gateway_id")
+  nvrHost String? @map("nvr_host")
+  nvrUsername String? @map("nvr_username")
+  nvrPasswordEncrypted String? @map("nvr_password_encrypted")
+  camerasJson String? @map("cameras_json") @db.Text
+  segmentSeconds Int @default(300) @map("segment_seconds")
+  uploadPollSeconds Int @default(15) @map("upload_poll_seconds")
+  status CctvDeviceStatus @default(PROVISIONING)
+  lastSeenAt DateTime? @map("last_seen_at")
+  lastUploadAt DateTime? @map("last_upload_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  uploads CctvUpload[]
+  @@index([userId])
+  @@map("cctv_devices")
+}
+
+model CctvUpload {
+  id String @id @default(uuid())
+  deviceId String @map("device_id")
+  device CctvDevice @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  filename String
+  path String
+  size BigInt
+  recordedAt DateTime? @map("recorded_at")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@unique([deviceId, filename])
+  @@index([deviceId, createdAt])
+  @@map("cctv_uploads")
+}
+
 model User {
   id           String @id @default(uuid())
   name         String
@@ -98,6 +145,7 @@ model User {
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
   notificationPreferences NotificationPreference?
+  cctvDevices CctvDevice[]
 
   @@map("users")
 }

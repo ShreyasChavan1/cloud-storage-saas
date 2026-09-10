@@ -6,7 +6,7 @@
   html { -webkit-font-smoothing: antialiased; }
   body { @apply bg-surface-50 text-ink-900 font-sans dark:bg-dark-bg dark:text-white transition-colors duration-200; }
   h1, h2, h3, h4 { @apply font-display text-ink-900 dark:text-white; }
-  ::selection { @apply bg-brand-200 text-brand-900; }
+  ::selection { @apply bg-accent-200 text-brand-900; }
   *:focus-visible { @apply outline-none ring-2 ring-brand-500 ring-offset-2 ring-offset-surface-0 dark:ring-offset-dark-bg; }
 }
 

@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
-import { User, Lock, Palette, CreditCard, Bell } from 'lucide-react'
+import { User, Lock, Palette, CreditCard, Bell, Video } from 'lucide-react'
+import { cctvApi, CctvDevice } from '@/api/cctv'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -19,6 +20,7 @@ const tabs = [
   { id: 'appearance', label: 'Appearance', icon: Palette },
   { id: 'billing', label: 'Billing', icon: CreditCard },
   { id: 'notifications', label: 'Notifications', icon: Bell },
+  { id: 'cctv', label: 'CCTV', icon: Video },
 ]
 
 export default function Settings() {
@@ -32,11 +34,18 @@ export default function Settings() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [notifications, setNotifications] = useState({ fileShared: true, comments: true, storageAlmostFull: true, productUpdates: true })
   const [notificationsLoading, setNotificationsLoading] = useState(false)
+  const [cctvDevices, setCctvDevices] = useState<CctvDevice[]>([])
+  const [cctvLoading, setCctvLoading] = useState(false)
+  const [cctvName, setCctvName] = useState('')
+  const [newCctvEnrollment, setNewCctvEnrollment] = useState<{ id: string; name: string; code: string } | null>(null)
+  const [cctvConfig, setCctvConfig] = useState({ nvrHost: '', nvrUsername: '', nvrPassword: '', segmentSeconds: 300, uploadPollSeconds: 15 })
+  const [cctvCameras, setCctvCameras] = useState([{ name: 'Camera 01', rtspUrl: '', enabled: true }])
 
   const { data: profile, isLoading: profileLoading } = useProfile()
   const updateProfile = useUpdateProfile()
 
   useEffect(() => {
+    if (active === 'cctv') cctvApi.list().then(setCctvDevices).catch(() => showToast('Could not load CCTV devices.', 'error'))
     if (active === 'notifications') userApi.getNotifications().then(setNotifications).catch(() => showToast('Could not load notification preferences.', 'error'))
   }, [active])
 
@@ -191,6 +200,62 @@ export default function Settings() {
                 <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Your payment is handled securely by Razorpay. Future charges are processed automatically according to the plan you authorized.</p>
               </div>
               <p className="mt-4 text-sm text-ink-500 dark:text-ink-400">Detailed payment history will be added to this section later.</p>
+            </Card>
+          )}
+
+          {active === 'cctv' && (
+            <Card className="p-6">
+              <h2 className="text-lg font-semibold">CCTV / NVR cloud backup</h2>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Connect an NVR on your local network. Nimbus stores completed camera recordings in your cloud storage automatically. No camera or NVR ports need to be exposed to the internet.</p>
+
+              <div className="mt-5 rounded-xl border border-line p-4 dark:border-dark-border">
+                <p className="font-medium">1. Create a gateway</p>
+                <div className="mt-3 flex gap-2 max-w-lg">
+                  <Input label="Gateway / NVR name" value={cctvName} onChange={e => setCctvName(e.target.value)} placeholder="Office NVR" />
+                  <Button className="mt-7" loading={cctvLoading} disabled={!cctvName.trim()} onClick={async () => { setCctvLoading(true); try { const d = await cctvApi.create(cctvName.trim()); setCctvDevices(x => [d, ...x]); setNewCctvEnrollment({ id: d.id, name: d.name, code: d.enrollmentCode }); setCctvName(''); showToast('Gateway created. Use the one-time enrollment code during gateway installation.') } catch (err) { showToast(getErrorMessage(err, 'Could not create CCTV gateway.'), 'error') } finally { setCctvLoading(false) } }}>Create</Button>
+                </div>
+                {newCctvEnrollment && (
+                  <div className="mt-4 rounded-xl border border-accent-200 bg-accent-50 p-4 dark:border-accent-900/40 dark:bg-accent-900/10">
+                    <p className="font-medium">One-time gateway enrollment code</p>
+                    <p className="mt-2 font-mono text-lg tracking-wider">{newCctvEnrollment.code}</p>
+                    <p className="mt-2 text-xs text-ink-500">Expires in 24 hours. Install the Nimbus NVR Gateway on a machine on the same LAN as this NVR, then enter this code in the gateway installer. Docker is not required. After enrollment, configure the NVR here. The permanent gateway token is never shown in Nimbus.</p>
+                  </div>
+                )}
+              </div>
+
+              {newCctvEnrollment && (
+                <div className="mt-5 rounded-xl border border-line p-4 dark:border-dark-border">
+                  <p className="font-medium">2. Configure the NVR</p>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <Input label="NVR IP / hostname" value={cctvConfig.nvrHost} onChange={e => setCctvConfig(x => ({ ...x, nvrHost: e.target.value }))} placeholder="192.168.1.100" />
+                    <Input label="NVR username" value={cctvConfig.nvrUsername} onChange={e => setCctvConfig(x => ({ ...x, nvrUsername: e.target.value }))} placeholder="admin" />
+                    <Input label="NVR password" type="password" value={cctvConfig.nvrPassword} onChange={e => setCctvConfig(x => ({ ...x, nvrPassword: e.target.value }))} placeholder="NVR password" />
+                    <Input label="Recording interval (seconds)" type="number" min={30} max={3600} value={cctvConfig.segmentSeconds} onChange={e => setCctvConfig(x => ({ ...x, segmentSeconds: Number(e.target.value) }))} />
+                  </div>
+                  <div className="mt-5 space-y-3">
+                    <div className="flex items-center justify-between"><p className="text-sm font-medium">NVR camera channels</p><Button size="sm" variant="secondary" onClick={() => setCctvCameras(x => [...x, { name: `Camera ${String(x.length + 1).padStart(2, '0')}`, rtspUrl: '', enabled: true }])}>Add camera</Button></div>
+                    {cctvCameras.map((camera, i) => (
+                      <div key={i} className="grid gap-2 sm:grid-cols-[180px_1fr_auto]">
+                        <Input label={i === 0 ? 'Camera name' : undefined} value={camera.name} onChange={e => setCctvCameras(x => x.map((c, j) => j === i ? { ...c, name: e.target.value } : c))} />
+                        <Input label={i === 0 ? 'RTSP channel URL' : undefined} value={camera.rtspUrl} onChange={e => setCctvCameras(x => x.map((c, j) => j === i ? { ...c, rtspUrl: e.target.value } : c))} placeholder="rtsp://NVR/channel-url" />
+                        <Button variant="danger" size="sm" className="mt-1 sm:mt-7" disabled={cctvCameras.length === 1} onClick={() => setCctvCameras(x => x.filter((_, j) => j !== i))}>Remove</Button>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-5 flex justify-end">
+                    <Button loading={cctvLoading} onClick={async () => { setCctvLoading(true); try { await cctvApi.configure(newCctvEnrollment.id, { ...cctvConfig, cameras: cctvCameras }); setCctvDevices(x => x.map(d => d.id === newCctvEnrollment.id ? { ...d, status: 'ACTIVE', nvrHost: cctvConfig.nvrHost, camerasConfigured: cctvCameras.length, segmentSeconds: cctvConfig.segmentSeconds } : d)); showToast('NVR configuration saved. The gateway will pick it up automatically.') } catch (err) { showToast(getErrorMessage(err, 'Could not save NVR configuration.'), 'error') } finally { setCctvLoading(false) } }}>Save NVR configuration</Button>
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-6 space-y-3">
+                {cctvDevices.map(d => (
+                  <div key={d.id} className="rounded-xl border border-line p-4 dark:border-dark-border">
+                    <div className="flex items-center justify-between gap-4"><div><p className="font-medium">{d.name}</p><p className="text-xs text-ink-500">{d.status === 'ACTIVE' ? '● Connected/configured' : '● Waiting for gateway enrollment'} · {d.camerasConfigured ?? 0} camera(s) · {d.lastUploadAt ? `last upload ${new Date(d.lastUploadAt).toLocaleString()}` : 'no uploads yet'}</p></div><Button variant="danger" size="sm" onClick={async () => { if (!window.confirm(`Remove ${d.name}?`)) return; try { await cctvApi.remove(d.id); setCctvDevices(x => x.filter(i => i.id !== d.id)); if (newCctvEnrollment?.id === d.id) setNewCctvEnrollment(null); showToast('CCTV gateway removed.') } catch (err) { showToast(getErrorMessage(err, 'Could not remove CCTV gateway.'), 'error') } }}>Remove</Button></div>
+                  </div>
+                ))}
+                {!cctvDevices.length && <p className="text-sm text-ink-500">No CCTV gateways configured.</p>}
+              </div>
             </Card>
           )}
 

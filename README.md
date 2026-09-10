@@ -109,7 +109,7 @@ exactly what that checks and why).
 See `src/components/admin/AdminUsersTable.test.tsx` for coverage.
 
 ## Design system
-- **Accent** `brand-500 #3B6FF6` on a white / `surface-50` base, full dark mode via Tailwind's `class` strategy.
+- **Brand palette** uses Dalvi VaultGrid's teal/navy foundation with orange `accent-500 #FF6A00` for primary actions, on a white / `surface-50` base, with full dark mode via Tailwind's `class` strategy.
 - **Type**: Manrope for headings, Inter for body/UI, JetBrains Mono available for data-dense contexts.
 - **Cards**: rounded-2xl, soft two-layer shadows, 1px hairline borders — no harsh dividers.
 - **Signature element**: the circular `StorageRing` gauge (dashboard, sidebar, admin user detail) instead of a plain progress bar, so storage always has a glanceable shape.
@@ -145,3 +145,11 @@ cd backend
 npx prisma migrate deploy
 npx prisma generate
 ```
+
+## CCTV / NVR backup
+
+Nimbus includes a production NVR gateway under `nvr-gateway/`. The customer installs it on a machine on the same LAN as the NVR. **Docker is not required.** Windows uses `install.ps1` and registers a startup task; Linux uses `install.sh` and registers a systemd service. The installer automatically installs Node.js and FFmpeg if needed.
+
+The customer creates a gateway in **Settings → CCTV**, receives a one-time enrollment code, and enters only that code during gateway installation. NVR credentials, channels, RTSP URLs, and recording intervals are configured from Nimbus and delivered securely to the enrolled gateway over HTTPS.
+
+The gateway pulls NVR channels over RTSP with FFmpeg, cuts configurable MP4 intervals, queues footage locally during outages, retries uploads, and uploads completed footage over HTTPS to the user's Nextcloud-backed Nimbus storage. The gateway exposes no public listening port.

@@ -96,7 +96,7 @@ export default function Pricing() {
         modal: {
           ondismiss: () => setLoadingPlan(null),
         },
-        theme: { color: '#4f46e5' },
+        theme: { color: '#FF6A00' },
       })
       razorpay.open()
     } catch (err) {

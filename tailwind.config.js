@@ -6,7 +6,8 @@ export default {
   theme: {
     extend: {
       colors: {
-        brand: { 50:'#EEF3FF',100:'#DCE7FF',200:'#B9CFFF',300:'#8FB0FF',400:'#5C89FA',500:'#3B6FF6',600:'#2957DE',700:'#1F44B0',800:'#1A3888',900:'#172F6E' },
+        brand: { 50:'#ECF9FA',100:'#D5F2F4',200:'#AFE5E8',300:'#75CCD2',400:'#35B1BA',500:'#078F9B',600:'#067887',700:'#075E70',800:'#07485A',900:'#063548' },
+        accent: { 50:'#FFF4EB',100:'#FFE4CF',200:'#FFC89F',300:'#FFAA6A',400:'#FF8A32',500:'#FF6A00',600:'#E85C00',700:'#C94F00',800:'#A44200',900:'#843600' },
         ink: { 900:'#0F1729',700:'#33415C',500:'#64748B',400:'#8996AA',300:'#A6B0C3' },
         surface: { 0:'#FFFFFF',50:'#F7F9FC',100:'#EEF1F7' },
         line: '#E4E9F2',
@@ -25,7 +26,7 @@ export default {
       boxShadow: {
         soft: '0 1px 2px rgba(15, 23, 41, 0.04), 0 8px 24px -8px rgba(15, 23, 41, 0.08)',
         softer: '0 1px 2px rgba(15, 23, 41, 0.03), 0 4px 12px -4px rgba(15, 23, 41, 0.06)',
-        lift: '0 12px 32px -12px rgba(59, 111, 246, 0.35)',
+        lift: '0 12px 32px -12px rgba(7, 143, 155, 0.35)',
         'soft-dark': '0 1px 2px rgba(0,0,0,0.3), 0 8px 24px -8px rgba(0,0,0,0.45)',
       },
       keyframes: {

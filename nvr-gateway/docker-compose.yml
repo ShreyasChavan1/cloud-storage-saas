@@ -1,0 +1,13 @@
+services:
+  nimbus-nvr-gateway:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./spool:/spool
+    # The gateway only needs outbound HTTPS. No host ports are published.
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -f 'node dist/index.js' >/dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3

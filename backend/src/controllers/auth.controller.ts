@@ -12,10 +12,16 @@ const REFRESH_COOKIE_NAME = 'nimbus_refresh_token'
 // JS (mitigates XSS token theft); the access token goes in the JSON body
 // for the client to hold in memory and attach as a Bearer header.
 function setRefreshCookie(res: Response, token: string) {
+  // sameSite must be 'none' whenever frontend and backend are on different
+  // sites (e.g. a Vercel frontend calling a Railway backend) — 'lax' cookies
+  // are not sent on cross-site fetch/XHR calls at all, only on top-level
+  // navigations, which would silently break refresh-token delivery on every
+  // request. 'none' requires Secure, which is already true in production;
+  // dev stays on 'lax' since localhost:<port> frontend/backend are same-site.
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    sameSite: env.NODE_ENV === 'production' ? 'none' : 'lax',
     maxAge: ms(env.JWT_REFRESH_EXPIRES_IN),
     path: '/api/auth',
   })

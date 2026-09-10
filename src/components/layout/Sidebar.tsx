@@ -87,7 +87,7 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           <ProgressBar value={usedBytes} max={totalBytes ?? Math.max(usedBytes, 1)} className="mt-2" />
           <NavLink
             to="/pricing"
-            className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-brand-500 py-2 text-xs font-semibold text-white hover:bg-brand-600"
+            className="mt-3 flex items-center justify-center gap-1.5 rounded-lg bg-accent-500 py-2 text-xs font-semibold text-white hover:bg-accent-600"
           >
             <Sparkles className="h-3.5 w-3.5" />
             Upgrade plan

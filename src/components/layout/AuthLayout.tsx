@@ -24,7 +24,7 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
         </div>
         <p className="text-center text-xs text-ink-400">© 2026 Nimbus Storage, Inc.</p>
       </div>
-      <div className="relative hidden overflow-hidden bg-brand-600 lg:flex lg:flex-col lg:justify-center lg:px-16">
+      <div className="relative hidden overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 lg:flex lg:flex-col lg:justify-center lg:px-16">
         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15), transparent 40%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.12), transparent 45%)' }} />
         <div className="relative z-10 max-w-md">
           <p className="font-display text-2xl font-semibold leading-snug text-white">"Every file we own now lives in one calm, findable place."</p>

@@ -99,6 +99,14 @@ export const webDavService = {
     })
   },
 
+  async uploadStream(nextcloudUsername: string, davPassword: string, path: string, data: NodeJS.ReadableStream): Promise<void> {
+    await run(async () => {
+      const client = await clientFor(nextcloudUsername, davPassword)
+      return client.putFileContents(path, data as any, { overwrite: true })
+    })
+  },
+
+
   // Returns a live readable stream — the controller pipes this directly
   // into the HTTP response rather than buffering the whole file in memory.
   async downloadStream(nextcloudUsername: string, davPassword: string, path: string): Promise<Readable> {
