@@ -174,6 +174,11 @@ export const adminService = {
     } catch (err) {
       const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
       logger.error({ userId: id, detail }, 'Nextcloud password change failed — Postgres password left unchanged')
+      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+        throw ApiError.badRequest(
+          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+        )
+      }
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
 

@@ -3,7 +3,7 @@ import { userRepository } from '../repositories/user.repository'
 import { sessionRepository } from '../repositories/session.repository'
 import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
 import { provisionUser } from './userProvisioning.service'
-import { nextcloudService } from './NextcloudService'
+import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { hashPassword } from '../utils/password'
 import { encrypt } from '../utils/encryption'
 import { toAuthUserDTO } from '../models/user.model'
@@ -180,6 +180,11 @@ export const authService = {
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'unknown error'
       logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+        throw ApiError.badRequest(
+          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+        )
+      }
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
     await userRepository.update(user.id, {
@@ -223,6 +228,11 @@ export const authService = {
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'unknown error'
       logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+        throw ApiError.badRequest(
+          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+        )
+      }
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
     await userRepository.update(user.id, {

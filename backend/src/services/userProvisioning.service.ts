@@ -91,6 +91,11 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
     await userRepository.delete(user.id)
     const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
     logger.error({ userId: user.id, detail }, 'Nextcloud provisioning failed — rolled back Postgres user')
+    if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+      throw ApiError.badRequest(
+        'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+      )
+    }
     throw ApiError.serviceUnavailable('Could not set up the storage account. Please try again.')
   }
 

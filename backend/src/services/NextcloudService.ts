@@ -23,10 +23,13 @@ import { env } from '../config/env'
  * Bearer header, never logged, never returned in any response.
  */
 
+export type NextcloudErrorCode = 'PASSWORD_TOO_WEAK'
+
 export class NextcloudApiError extends Error {
   constructor(
     message: string,
-    public readonly statusCode?: number
+    public readonly statusCode?: number,
+    public readonly code?: NextcloudErrorCode
   ) {
     super(message)
     this.name = 'NextcloudApiError'
@@ -63,13 +66,15 @@ async function agentRequest<T>(
 
   if (!res.ok) {
     let message = `Nextcloud agent request failed (HTTP ${res.status})`
+    let code: NextcloudErrorCode | undefined
     try {
-      const errBody = (await res.json()) as { error?: string }
+      const errBody = (await res.json()) as { error?: string; code?: string }
       if (errBody?.error) message = errBody.error
+      if (errBody?.code === 'PASSWORD_TOO_WEAK') code = 'PASSWORD_TOO_WEAK'
     } catch {
       // Response wasn't JSON — fall back to the generic message above.
     }
-    throw new NextcloudApiError(message, res.status)
+    throw new NextcloudApiError(message, res.status, code)
   }
 
   if (res.status === 204) return undefined as T
