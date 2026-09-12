@@ -116,6 +116,9 @@ export const nextcloudService = {
     return { webdavPassword: result.webdavPassword }
   },
 
+  async setEmail(userid:string,email:string):Promise<void>{ await agentRequest('PUT', `/internal/users/${encodeURIComponent(userid)}/email`, {email}) },
+  async expireVersions(userid:string,retentionDays:number):Promise<void>{ await agentRequest('POST', `/internal/users/${encodeURIComponent(userid)}/versions/expire`, {retentionDays}) },
+
   async deleteUser(userid: string): Promise<void> {
     await agentRequest<{ success: true }>('DELETE', `/internal/users/${encodeURIComponent(userid)}`)
   },

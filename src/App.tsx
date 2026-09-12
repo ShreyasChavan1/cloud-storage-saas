@@ -8,6 +8,7 @@ import Files from '@/pages/Files'
 import Settings from '@/pages/Settings'
 import Pricing from '@/pages/Pricing'
 import NotFound from '@/pages/NotFound'
+import PublicShare from '@/pages/PublicShare'
 import AdminDashboard from '@/pages/admin/AdminDashboard'
 import AdminUserDetail from '@/pages/admin/AdminUserDetail'
 import { AppLayout } from '@/components/layout/AppLayout'
@@ -22,6 +23,7 @@ export default function App() {
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/pricing" element={<Pricing />} />
+      <Route path="/share/:token" element={<PublicShare />} />
 
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />

@@ -142,6 +142,10 @@ export const webDavService = {
     })
   },
 
+  async getFileId(u:string,p:string,path:string):Promise<string>{return run(async()=>{const c=await clientFor(u,p);const r=await c.customRequest(path,{method:'PROPFIND',headers:{Depth:'0','Content-Type':'application/xml'},data:'<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><oc:fileid/></d:prop></d:propfind>'} as any);const x=await r.text();const m=x.match(/<[^:>]*:fileid[^>]*>([^<]+)<\/[^:>]*:fileid>/i);if(!m)throw new Error('Nextcloud did not return a file id');return m[1]})},
+  async listVersions(u:string,p:string,id:string){return run(async()=>{const {createClient}=await loadWebdav();const c=createClient(`${env.NEXTCLOUD_URL}/remote.php/dav/versions/${encodeURIComponent(u)}`,{username:u,password:p});const r=await c.customRequest(`/versions/${encodeURIComponent(id)}`,{method:'PROPFIND',headers:{Depth:'1'}} as any);const x=await r.text();return [...x.matchAll(/<[^:>]*:response[^>]*>([\s\S]*?)<\/[^:>]*:response>/gi)].map(m=>{const q=m[1],h=q.match(/<[^:>]*:href[^>]*>([\s\S]*?)<\/[^:>]*:href>/i)?.[1]||'',rev=decodeURIComponent(h.replace(/\/+$/,'').split('/').pop()||'');return {revision:rev,modifiedAt:q.match(/<[^:>]*:getlastmodified[^>]*>([\s\S]*?)<\/[^:>]*:getlastmodified>/i)?.[1]||'',size:Number(q.match(/<[^:>]*:getcontentlength[^>]*>([\s\S]*?)<\/[^:>]*:getcontentlength>/i)?.[1]||0)}}).filter(v=>/^\d+$/.test(v.revision)).sort((a,b)=>Number(b.revision)-Number(a.revision))})},
+  async restoreVersion(u:string,p:string,id:string,rev:string){await run(async()=>{const {createClient}=await loadWebdav();const c=createClient(`${env.NEXTCLOUD_URL}/remote.php/dav/versions/${encodeURIComponent(u)}`,{username:u,password:p});await c.customRequest(`/versions/${encodeURIComponent(id)}/${encodeURIComponent(rev)}`,{method:'MOVE',headers:{Destination:`${env.NEXTCLOUD_URL}/remote.php/dav/versions/${encodeURIComponent(u)}/restore`}} as any)})},
+
   async getQuota(
     nextcloudUsername: string,
     davPassword: string

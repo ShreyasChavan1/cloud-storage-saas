@@ -5,6 +5,7 @@ import filesRoutes from './files.routes'
 import adminRoutes from './admin.routes'
 import paymentRoutes from './payment.routes'
 import cctvRoutes from './cctv.routes'
+import shareRoutes from './share.routes'
 
 const router = Router()
 
@@ -18,5 +19,6 @@ router.use('/files', filesRoutes)
 router.use('/admin', adminRoutes)
 router.use('/payments', paymentRoutes)
 router.use('/cctv', cctvRoutes)
+router.use('/shares', shareRoutes)
 
 export default router

@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MoreVertical, Download, Pencil, FolderInput, Trash2, Star } from 'lucide-react'
+import { MoreVertical, Download, Pencil, FolderInput, Trash2, Star, Share2, History } from 'lucide-react'
 import { DropdownMenu } from '@/components/ui/DropdownMenu'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
@@ -7,6 +7,8 @@ import { FileEntry, filesApi } from '@/api/files'
 import { useDeleteFile, useRenameFile, useMoveFile, useFavoriteFile } from '@/hooks/useFileMutations'
 import { useToast } from '@/context/ToastContext'
 import { getErrorMessage } from '@/lib/getErrorMessage'
+import { ShareDialog } from './ShareDialog'
+import { VersionsDialog } from './VersionsDialog'
 
 export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath: string | undefined }) {
   const { showToast } = useToast()
@@ -18,6 +20,8 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
   const [renaming, setRenaming] = useState(false)
   const [moving, setMoving] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const [sharing, setSharing] = useState(false)
+  const [versions, setVersions] = useState(false)
 
   const handleDownload = async () => {
     try {
@@ -68,8 +72,11 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
         }
         items={[
           ...(entry.type === 'file'
-            ? [{ label: 'Download', icon: <Download className="h-4 w-4" />, onSelect: handleDownload }]
-            : []),
+            ? [
+              { label: 'Download', icon: <Download className="h-4 w-4" />, onSelect: handleDownload },
+              { label: 'Share link', icon: <Share2 className="h-4 w-4" />, onSelect: () => setSharing(true) },
+              { label: 'Version history', icon: <History className="h-4 w-4" />, onSelect: () => setVersions(true) },
+            ] : []),
           { label: 'Rename', icon: <Pencil className="h-4 w-4" />, onSelect: () => setRenaming(true) },
           { label: 'Move', icon: <FolderInput className="h-4 w-4" />, onSelect: () => setMoving(true) },
           {
@@ -103,6 +110,9 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
         onCancel={() => setMoving(false)}
         onConfirm={handleMove}
       />
+
+      <ShareDialog open={sharing} path={entry.path} name={entry.name} onClose={()=>setSharing(false)} />
+      <VersionsDialog open={versions} path={entry.path} name={entry.name} onClose={()=>setVersions(false)} />
 
       <ConfirmDialog
         open={deleting}

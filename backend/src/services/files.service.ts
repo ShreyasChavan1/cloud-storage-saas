@@ -7,6 +7,7 @@ import { ApiError } from '../utils/ApiError'
 import { favoriteRepository } from '../repositories/favorite.repository'
 import { toFileEntryDTO, FileEntryDTO, toStorageStatsDTO, StorageStatsDTO } from '../models/file.model'
 import { logger } from '../config/logger'
+import { nextcloudService } from './NextcloudService'
 
 interface DavCredentials {
   nextcloudUsername: string
@@ -91,6 +92,23 @@ export const filesService = {
       if (stat.type === 'directory') {
         throw ApiError.badRequest('Cannot download a folder directly')
       }
+      const stream = await webDavService.downloadStream(nextcloudUsername, davPassword, path)
+      return { stream, stat: toFileEntryDTO(stat) }
+    } catch (err) {
+      if (err instanceof ApiError) throw err
+      translateWebDavError(err)
+    }
+  },
+
+  async preview(
+    userId: string,
+    rawPath: string
+  ): Promise<{ stream: NodeJS.ReadableStream; stat: FileEntryDTO }> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    const path = sanitizeDavPath(rawPath)
+    try {
+      const stat = await webDavService.stat(nextcloudUsername, davPassword, path)
+      if (stat.type === 'directory') throw ApiError.badRequest('Cannot preview a folder')
       const stream = await webDavService.downloadStream(nextcloudUsername, davPassword, path)
       return { stream, stat: toFileEntryDTO(stat) }
     } catch (err) {
@@ -213,6 +231,9 @@ export const filesService = {
       translateWebDavError(err)
     }
   },
+
+  async versions(userId:string,rawPath:string){const u=await userRepository.findById(userId);if(!u?.nextcloudUsername||!u.nextcloudWebdavPasswordEncrypted)throw ApiError.serviceUnavailable('Storage account is not provisioned');const path=sanitizeDavPath(rawPath),p=decrypt(u.nextcloudWebdavPasswordEncrypted);if(path==='/')throw ApiError.badRequest('The root folder has no version history');try{const st=await webDavService.stat(u.nextcloudUsername,p,path);if(st.type==='directory')throw ApiError.badRequest('Folders do not have version history');const id=await webDavService.getFileId(u.nextcloudUsername,p,path);const days=u.plan?.name==='Pro'?180:30;await nextcloudService.expireVersions(u.nextcloudUsername,days);return {path,name:st.basename,retentionDays:days,versions:await webDavService.listVersions(u.nextcloudUsername,p,id)}}catch(e){if(e instanceof ApiError)throw e;translateWebDavError(e)}},
+  async restoreVersion(userId:string,rawPath:string,revision:string){const u=await userRepository.findById(userId);if(!u?.nextcloudUsername||!u.nextcloudWebdavPasswordEncrypted)throw ApiError.serviceUnavailable('Storage account is not provisioned');if(!/^\d+$/.test(revision))throw ApiError.badRequest('Invalid version');const path=sanitizeDavPath(rawPath),p=decrypt(u.nextcloudWebdavPasswordEncrypted);try{const id=await webDavService.getFileId(u.nextcloudUsername,p,path);await webDavService.restoreVersion(u.nextcloudUsername,p,id,revision);return toFileEntryDTO(await webDavService.stat(u.nextcloudUsername,p,path))}catch(e){translateWebDavError(e)}},
 
   async quota(userId: string): Promise<{ used: number; available: number | 'unlimited' | 'unknown' }> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)

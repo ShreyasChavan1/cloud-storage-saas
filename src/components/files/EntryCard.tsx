@@ -9,7 +9,7 @@ import { FileMenu } from './FileMenu'
 import { useFavoriteFile } from '@/hooks/useFileMutations'
 import { cn } from '@/lib/cn'
 
-export function EntryCard({ entry, currentPath, onOpen }: { entry: FileEntry; currentPath: string | undefined; onOpen?: () => void }) {
+export function EntryCard({ entry, currentPath, onOpen, onPreview }: { entry: FileEntry; currentPath: string | undefined; onOpen?: () => void; onPreview?: () => void }) {
   const isFolder = entry.type === 'folder'
   const meta = !isFolder ? fileKindMeta[kindFromName(entry.name)] : null
   const Icon = meta?.icon
@@ -29,11 +29,11 @@ export function EntryCard({ entry, currentPath, onOpen }: { entry: FileEntry; cu
       draggable
       onDragStart={handleDragStart}
       onDragEnd={() => setIsDragging(false)}
-      onClick={isFolder ? onOpen : undefined}
+      onClick={isFolder ? onOpen : onPreview}
       {...(isFolder ? dropHandlers : {})}
       className={cn(
         'group relative flex flex-col rounded-2xl border border-line bg-surface-0 p-4 shadow-softer transition-all hover:-translate-y-0.5 hover:shadow-soft dark:border-dark-border dark:bg-dark-surface',
-        isFolder && 'cursor-pointer',
+        (isFolder || onPreview) && 'cursor-pointer',
         isDragging && 'opacity-40',
         isDragOver && 'border-brand-500 bg-brand-50 ring-2 ring-brand-200 dark:bg-brand-900/20'
       )}

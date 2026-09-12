@@ -9,13 +9,14 @@ import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
 import { useCreateFolder } from '@/hooks/useFileMutations'
 import { useQuery } from '@tanstack/react-query'
-import { filesApi } from '@/api/files'
+import { filesApi, FileEntry } from '@/api/files'
 import { useDropToMove } from '@/hooks/useDropToMove'
 import { useToast } from '@/context/ToastContext'
 import { useUploadQueue } from '@/context/UploadQueueContext'
 import { CollectedFile } from '@/lib/collectFileEntries'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { cn } from '@/lib/cn'
+import { PreviewModal } from '@/components/files/PreviewModal'
 
 const unsupportedViews: Record<string, { label: string; icon: typeof Star; note: string }> = {
   shared: { label: 'Shared with you', icon: Share2, note: "Sharing isn't wired up to the backend yet." },
@@ -59,6 +60,7 @@ function BreadcrumbButton({
 export default function Files() {
   const [layout, setLayout] = useState<'grid' | 'list'>('grid')
   const [creatingFolder, setCreatingFolder] = useState(false)
+  const [previewEntry, setPreviewEntry] = useState<FileEntry | null>(null)
   const [searchParams, setSearchParams] = useSearchParams()
   const { showToast } = useToast()
   const { enqueue } = useUploadQueue()
@@ -217,7 +219,7 @@ export default function Files() {
         ) : layout === 'grid' ? (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {filteredEntries.map((entry) => (
-              <EntryCard key={entry.path} entry={entry} currentPath={currentPath} onOpen={() => openFolder(entry.path)} />
+              <EntryCard key={entry.path} entry={entry} currentPath={currentPath} onOpen={() => openFolder(entry.path)} onPreview={() => setPreviewEntry(entry)} />
             ))}
           </div>
         ) : (
@@ -230,12 +232,14 @@ export default function Files() {
             </div>
             <div className="divide-y divide-line dark:divide-dark-border">
               {filteredEntries.map((entry) => (
-                <EntryRow key={entry.path} entry={entry} currentPath={currentPath} onOpen={() => openFolder(entry.path)} />
+                <EntryRow key={entry.path} entry={entry} currentPath={currentPath} onOpen={() => openFolder(entry.path)} onPreview={() => setPreviewEntry(entry)} />
               ))}
             </div>
           </div>
         )}
       </div>
+
+      <PreviewModal entry={previewEntry} onClose={() => setPreviewEntry(null)} />
 
       <PromptDialog
         open={creatingFolder}

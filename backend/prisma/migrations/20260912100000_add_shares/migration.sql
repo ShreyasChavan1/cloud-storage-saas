@@ -1,0 +1,4 @@
+CREATE TABLE "shares" ("id" TEXT NOT NULL,"user_id" TEXT NOT NULL,"path" TEXT NOT NULL,"name" TEXT NOT NULL,"nextcloud_share_id" INTEGER NOT NULL,"token" TEXT NOT NULL,"has_password" BOOLEAN NOT NULL DEFAULT false,"expire_date" TIMESTAMP(3),"created_at" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,CONSTRAINT "shares_pkey" PRIMARY KEY ("id"));
+CREATE UNIQUE INDEX "shares_token_key" ON "shares"("token");
+CREATE INDEX "shares_user_id_idx" ON "shares"("user_id");
+ALTER TABLE "shares" ADD CONSTRAINT "shares_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;

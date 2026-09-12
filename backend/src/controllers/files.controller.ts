@@ -52,6 +52,16 @@ export const filesController = {
     stream.pipe(res)
   }),
 
+  preview: asyncHandler(async (req: Request, res: Response) => {
+    const { stream, stat } = await filesService.preview(req.user!.sub, req.query.path as string)
+    res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
+    res.setHeader('Content-Disposition', 'inline')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    if (stat.size) res.setHeader('Content-Length', String(stat.size))
+    stream.on('error', () => res.end())
+    stream.pipe(res)
+  }),
+
   delete: asyncHandler(async (req: Request, res: Response) => {
     await filesService.delete(req.user!.sub, req.query.path as string)
     return sendSuccess(res, { deleted: true })
@@ -91,6 +101,10 @@ export const filesController = {
     const entries = await filesService.favorites(req.user!.sub)
     return sendSuccess(res, { entries })
   }),
+
+  versions: asyncHandler(async (req: Request, res: Response) => sendSuccess(res, await filesService.versions(req.user!.sub, req.query.path as string))),
+
+  restoreVersion: asyncHandler(async (req: Request, res: Response) => sendSuccess(res, { entry: await filesService.restoreVersion(req.user!.sub, req.body.path, req.body.revision) })),
 
   stats: asyncHandler(async (req: Request, res: Response) => {
     const stats = await filesService.stats(req.user!.sub)

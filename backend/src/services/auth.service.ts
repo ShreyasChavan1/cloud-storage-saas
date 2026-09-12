@@ -52,6 +52,8 @@ export const authService = {
       password: input.password,
     })
 
+    if (user.nextcloudUsername) { try { await nextcloudService.setEmail(user.nextcloudUsername, user.email) } catch (err) { logger.warn({ userId:user.id, err }, 'Could not synchronize Nextcloud email during login') } }
+
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
 
     return { user: toAuthUserDTO(user), accessToken, refreshToken }

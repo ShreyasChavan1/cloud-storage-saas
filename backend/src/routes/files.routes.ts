@@ -12,6 +12,8 @@ import {
   copyFileSchema,
   downloadFileSchema,
   favoriteFileSchema,
+  versionsSchema,
+  restoreVersionSchema,
 } from '../validators/files.validator'
 
 const router = Router()
@@ -30,5 +32,8 @@ router.put('/favorite', validate(favoriteFileSchema), filesController.favorite)
 router.get('/quota', filesController.quota)
 router.get('/stats', filesController.stats)
 router.get('/download', validate(downloadFileSchema), filesController.download)
+router.get('/preview', validate(downloadFileSchema), filesController.preview)
+router.get('/versions', validate(versionsSchema), filesController.versions)
+router.post('/versions/restore', validate(restoreVersionSchema), filesController.restoreVersion)
 
 export default router

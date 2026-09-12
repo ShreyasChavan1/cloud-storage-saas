@@ -146,8 +146,24 @@ model User {
   passwordResetTokens PasswordResetToken[]
   notificationPreferences NotificationPreference?
   cctvDevices CctvDevice[]
+  shares Share[]
 
   @@map("users")
+}
+
+model Share {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  path String
+  name String
+  nextcloudShareId Int @map("nextcloud_share_id")
+  token String @unique
+  hasPassword Boolean @default(false) @map("has_password")
+  expireDate DateTime? @map("expire_date")
+  createdAt DateTime @default(now()) @map("created_at")
+  @@index([userId])
+  @@map("shares")
 }
 
 model Plan {
