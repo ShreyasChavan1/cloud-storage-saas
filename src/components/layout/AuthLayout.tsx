@@ -22,13 +22,13 @@ export function AuthLayout({ title, subtitle, children }: { title: string; subti
           <p className="mt-2 text-ink-500 dark:text-ink-400">{subtitle}</p>
           <div className="mt-8">{children}</div>
         </div>
-        <p className="text-center text-xs text-ink-400">© 2026 Nimbus Storage, Inc.</p>
+        <p className="text-center text-xs text-ink-400">© 2026 DVT Storage, Inc.</p>
       </div>
       <div className="relative hidden overflow-hidden bg-gradient-to-br from-brand-800 via-brand-700 to-brand-600 lg:flex lg:flex-col lg:justify-center lg:px-16">
         <div className="absolute inset-0 opacity-40" style={{ backgroundImage: 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.15), transparent 40%), radial-gradient(circle at 80% 70%, rgba(255,255,255,0.12), transparent 45%)' }} />
         <div className="relative z-10 max-w-md">
           <p className="font-display text-2xl font-semibold leading-snug text-white">"Every file we own now lives in one calm, findable place."</p>
-          <p className="mt-3 text-sm text-brand-100">Meera Iyer, Studio Alcove</p>
+          <p className="mt-3 text-sm text-brand-100">Hrishikesh Dalvi</p>
           <div className="mt-12 flex flex-col gap-4">
             {highlights.map((h) => (
               <div key={h} className="flex items-start gap-3">

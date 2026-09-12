@@ -9,7 +9,7 @@ export function UpgradeCard() {
       <div className="relative">
         <span className="inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-xs font-semibold">
           <Sparkles className="h-3.5 w-3.5" />
-          Nimbus Team
+          DVT Team
         </span>
         <h3 className="mt-3 font-display text-xl font-bold">Running out of room?</h3>
         <p className="mt-1.5 max-w-xs text-sm text-brand-100">Move to Team for 500GB of pooled storage and shared folders for everyone.</p>
