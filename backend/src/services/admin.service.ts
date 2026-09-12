@@ -172,13 +172,16 @@ export const adminService = {
       const result = await nextcloudService.changePassword(target.nextcloudUsername, finalPassword)
       webdavPassword = result.webdavPassword
     } catch (err) {
-      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
-      logger.error({ userId: id, detail }, 'Nextcloud password change failed — Postgres password left unchanged')
+      // Check the specific, expected case FIRST — a weak password an
+      // admin typed in isn't a failure worth an error-level log line
+      // (only genuine outages/unexpected agent errors get logged below).
       if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
         throw ApiError.badRequest(
           'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
         )
       }
+      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
+      logger.error({ userId: id, detail }, 'Nextcloud password change failed — Postgres password left unchanged')
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
 

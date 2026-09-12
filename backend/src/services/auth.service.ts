@@ -178,22 +178,20 @@ export const authService = {
       const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
       webdavPassword = result.webdavPassword
     } catch (err) {
+      // Check the specific, expected case FIRST — a weak password the user
+      // typed in isn't a failure worth an error-level log line (only
+      // genuine outages/unexpected agent errors get logged below).
+      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+        throw ApiError.badRequest(
+          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+        )
+      }
       const detail = err instanceof Error ? err.message : 'unknown error'
-
-  logger.error(
-    { userId: user.id, detail },
-    'Nextcloud password change failed — Postgres credentials left unchanged'
-  )
-
-  if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
-    throw ApiError.badRequest(
-      'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
-    )
-  }
-
-  throw ApiError.serviceUnavailable(
-    'Could not update the storage account password. Please try again.'
-  )
+      logger.error(
+        { userId: user.id, detail },
+        'Nextcloud password change failed — Postgres credentials left unchanged'
+      )
+      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
     await userRepository.update(user.id, {
       passwordHash: await hashPassword(newPassword),
@@ -234,13 +232,15 @@ export const authService = {
       const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
       webdavPassword = result.webdavPassword
     } catch (err) {
-      const detail = err instanceof Error ? err.message : 'unknown error'
-      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+      // Check the specific, expected case FIRST — see resetPassword above
+      // for why this comes before the generic error-log/service-unavailable path.
       if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
         throw ApiError.badRequest(
           'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
         )
       }
+      const detail = err instanceof Error ? err.message : 'unknown error'
+      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
       throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
     }
     await userRepository.update(user.id, {
