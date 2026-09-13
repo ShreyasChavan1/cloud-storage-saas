@@ -47,7 +47,19 @@ export default function Settings() {
   const updateProfile = useUpdateProfile()
 
   useEffect(() => {
-    if (active === 'cctv') cctvApi.list().then(setCctvDevices).catch(() => showToast('Could not load CCTV devices.', 'error'))
+    if (active !== 'cctv') return
+    // A gateway enrolling is a background event driven by a completely
+    // different machine (the installer on the NVR box) — nothing on this
+    // page ever triggers it, so a one-shot fetch on tab-open leaves the
+    // "Waiting for gateway enrollment" status stuck forever until the user
+    // manually leaves and re-enters this tab. Poll instead while the tab
+    // is open so a device flipping to ACTIVE shows up on its own.
+    const load = () => cctvApi.list().then(setCctvDevices).catch(() => showToast('Could not load CCTV devices.', 'error'))
+    load()
+    const interval = setInterval(load, 8000)
+    return () => clearInterval(interval)
+  }, [active])
+  useEffect(() => {
     if (active === 'notifications') userApi.getNotifications().then(setNotifications).catch(() => showToast('Could not load notification preferences.', 'error'))
   }, [active])
 
@@ -223,8 +235,8 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Windows</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Run <code>install.ps1</code> as Administrator. The installer registers the gateway to start automatically with Windows.</p></div>
-                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Linux</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Run <code>sudo ./install.sh</code>. The installer registers a systemd service and starts it automatically.</p></div>
+                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Windows</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Extract the zip and double-click <code>install.bat</code>. Click "Yes" on the permission prompt, then paste your enrollment code when asked — no PowerShell or terminal needed.</p></div>
+                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Linux</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Extract the zip, then run <code>sudo ./install.sh</code> from inside that folder. The installer registers a systemd service and starts it automatically.</p></div>
                 </div>
               </div>
 
