@@ -13,7 +13,18 @@ export function createApp() {
   const app = express()
 
   app.disable('x-powered-by')
-  app.use(helmet())
+  app.use(
+  helmet({
+    contentSecurityPolicy: {
+      directives: {
+        ...helmet.contentSecurityPolicy.getDefaultDirectives(),
+        'img-src': ["'self'", 'data:', 'blob:'],
+        'media-src': ["'self'", 'blob:'],
+        'frame-src': ["'self'", 'blob:'],
+      },
+    },
+  })
+)
   app.use(
     cors({
       origin: env.CLIENT_ORIGIN,
