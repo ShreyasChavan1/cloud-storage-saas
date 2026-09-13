@@ -69,5 +69,5 @@ export const favoriteFileSchema = z.object({
     favorite: z.boolean(),
   }),
 })
-\nexport const versionsSchema=z.object({query:z.object({path:z.string().min(1)})})
+export const versionsSchema=z.object({query:z.object({path:z.string().min(1)})})
 export const restoreVersionSchema=z.object({body:z.object({path:z.string().min(1),revision:z.string().regex(/^\d+$/)})})
