@@ -14,7 +14,7 @@ async function creds(userId: string) {
   return { username: u.nextcloudUsername, password: decrypt(u.nextcloudWebdavPasswordEncrypted) }
 }
 async function ocs(username: string, password: string, method: string, path: string, body: URLSearchParams) {
-    const r = await fetch(`${env.NEXTCLOUD_URL}/ocs/v2.php/apps/files_sharing/api/v1${path}`, {
+  const r = await fetch(`${env.NEXTCLOUD_URL}/ocs/v2.php/apps/files_sharing/api/v1${path}`, {
     method,
     headers: {
       Authorization: auth(username, password),
@@ -49,12 +49,42 @@ export const shareService = {
     const c = await creds(userId); await ocs(c.username, c.password, 'DELETE', `/shares/${s.nextcloudShareId}`, new URLSearchParams()); await prisma.share.delete({ where: { id } })
   },
   async downloadPublic(token: string, password?: string) {
-    const s = await prisma.share.findUnique({ where: { token } }); if (!s) throw ApiError.notFound('Share link not found')
-    if (s.expireDate && s.expireDate.getTime() < Date.now()) throw ApiError.notFound('This share link has expired.')
-    if (s.hasPassword && !password) throw ApiError.unauthorized('A share password is required.')
-    const headers: Record<string, string> = {}; if (s.hasPassword) headers.Authorization = auth('anonymous', password!)
-    const fr = await fetch(`${env.NEXTCLOUD_URL}/public.php/dav/files/${encodeURIComponent(token)}/${encodeURIComponent(s.name)}`, { headers })
-    if (!fr.ok || !fr.body) { if (fr.status === 401 || fr.status === 403) throw ApiError.unauthorized('Incorrect share password.'); throw ApiError.notFound('Shared file not found.') }
-    return { stream: fr.body, contentType: fr.headers.get('content-type') || 'application/octet-stream', length: fr.headers.get('content-length'), name: s.name }
+    const s = await prisma.share.findUnique({ where: { token } })
+
+    if (!s) {
+      throw ApiError.notFound('Share link not found')
+    }
+
+    if (s.expireDate && s.expireDate.getTime() < Date.now()) {
+      throw ApiError.notFound('This share link has expired.')
+    }
+
+    if (s.hasPassword && !password) {
+      throw ApiError.unauthorized('A share password is required.')
+    }
+
+    const headers: Record<string, string> = {
+      Authorization: auth(token, password ?? ''),
+    }
+
+    const fr = await fetch(
+      `${env.NEXTCLOUD_URL}/public.php/dav/files/${encodeURIComponent(token)}/${encodeURIComponent(s.name)}`,
+      { headers }
+    )
+
+    if (!fr.ok || !fr.body) {
+      if (fr.status === 401 || fr.status === 403) {
+        throw ApiError.unauthorized('Incorrect share password.')
+      }
+
+      throw ApiError.notFound('Shared file not found.')
+    }
+
+    return {
+      stream: fr.body,
+      contentType: fr.headers.get('content-type') || 'application/octet-stream',
+      length: fr.headers.get('content-length'),
+      name: s.name,
+    }
   }
 }
