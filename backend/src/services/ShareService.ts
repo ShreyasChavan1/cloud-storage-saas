@@ -25,7 +25,22 @@ async function ocs(username: string, password: string, method: string, path: str
     body: method === 'GET' ? undefined : body.toString(),
   })
   const text = await r.text(); let j: any; try { j = JSON.parse(text) } catch { }
-  if (!r.ok || j?.ocs?.meta?.status !== 'ok') { logger.warn({ status: r.status }, 'Nextcloud share API failed'); throw ApiError.serviceUnavailable('Could not manage the sharing link.') }
+  if (!r.ok || j?.ocs?.meta?.status !== 'ok') {
+  logger.error(
+    {
+      status: r.status,
+      response: j,
+      rawResponse: text,
+      username: username,
+      path,
+    },
+    'Nextcloud share API failed'
+  )
+
+  throw ApiError.serviceUnavailable(
+    j?.ocs?.meta?.message || 'Could not manage the sharing link.'
+  )
+}
   return j.ocs.data
 }
 export const shareService = {
