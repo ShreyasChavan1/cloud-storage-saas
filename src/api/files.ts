@@ -94,4 +94,4 @@ export const filesApi = {
 
   stats: () => api.get<{ data: StorageStats }>('/files/stats').then((r) => r.data.data),
 }
-\nexport const versionsApi={list:(path:string)=>api.get('/files/versions',{params:{path}}).then(r=>r.data.data),restore:(path:string,revision:string)=>api.post('/files/versions/restore',{path,revision}).then(r=>r.data.data.entry)}
+export const versionsApi={list:(path:string)=>api.get('/files/versions',{params:{path}}).then(r=>r.data.data),restore:(path:string,revision:string)=>api.post('/files/versions/restore',{path,revision}).then(r=>r.data.data.entry)}
