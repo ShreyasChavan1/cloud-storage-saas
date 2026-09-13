@@ -9,7 +9,8 @@ apt-get install -y nodejs npm ffmpeg ca-certificates
 mkdir -p "$INSTALL_DIR" "$SPOOL_DIR"
 cp -a "$(dirname "$0")"/. "$INSTALL_DIR"/
 rm -f "$INSTALL_DIR/install.sh" "$INSTALL_DIR/install.ps1" "$INSTALL_DIR/uninstall.ps1"
-read -r -p "Nimbus API URL: " API_URL
+API_URL="https://cloud-storage-saas-production.up.railway.app"
+echo "Nimbus API: $API_URL"
 read -r -p "One-time Nimbus gateway enrollment code: " ENROLLMENT_CODE
 if [[ -z "$API_URL" || -z "$ENROLLMENT_CODE" ]]; then echo "API URL and enrollment code are required."; exit 1; fi
 cat > "$INSTALL_DIR/.env" <<EOF
@@ -43,4 +44,5 @@ systemctl daemon-reload
 systemctl enable --now nimbus-nvr-gateway.service
 chmod 600 "$INSTALL_DIR/.env"
 echo "Nimbus NVR Gateway installed and started."
+echo "The gateway will fetch its NVR configuration automatically from Nimbus."
 echo "It runs automatically at boot. NVR configuration is managed from Nimbus."

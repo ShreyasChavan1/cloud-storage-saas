@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { User, Lock, Palette, CreditCard, Bell, Video } from 'lucide-react'
+import { User, Lock, Palette, CreditCard, Bell, Video, Copy, Download, Monitor, Terminal, RefreshCw } from 'lucide-react'
 import { cctvApi, CctvDevice } from '@/api/cctv'
 import { Card } from '@/components/ui/Card'
 import { Input } from '@/components/ui/Input'
@@ -38,6 +38,8 @@ export default function Settings() {
   const [cctvLoading, setCctvLoading] = useState(false)
   const [cctvName, setCctvName] = useState('')
   const [newCctvEnrollment, setNewCctvEnrollment] = useState<{ id: string; name: string; code: string } | null>(null)
+  const [editingCctvId, setEditingCctvId] = useState<string | null>(null)
+  const [copiedEnrollment, setCopiedEnrollment] = useState(false)
   const [cctvConfig, setCctvConfig] = useState({ nvrHost: '', nvrUsername: '', nvrPassword: '', segmentSeconds: 300, uploadPollSeconds: 15 })
   const [cctvCameras, setCctvCameras] = useState([{ name: 'Camera 01', rtspUrl: '', enabled: true }])
 
@@ -206,10 +208,28 @@ export default function Settings() {
           {active === 'cctv' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">CCTV / NVR cloud backup</h2>
-              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Connect an NVR on your local network. Nimbus stores completed camera recordings in your cloud storage automatically. No camera or NVR ports need to be exposed to the internet.</p>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Connect an NVR on your local network. Nimbus stores completed camera recordings in your cloud storage automatically. The gateway makes the outbound connection, so your camera or NVR does not need to be exposed to the internet.</p>
+
+              <div className="mt-5 rounded-xl border border-line bg-surface-50 p-4 dark:border-dark-border dark:bg-dark-surface2">
+                <div className="flex items-start gap-3">
+                  <div className="rounded-lg bg-brand-50 p-2 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300"><Monitor className="h-5 w-5" /></div>
+                  <div className="min-w-0 flex-1">
+                    <p className="font-semibold">Install the Nimbus NVR Gateway</p>
+                    <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Install it on a Windows PC or Linux server that can reach your NVR on the local network. Docker is not required.</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      <a href="/nvr-gateway/nimbus-nvr-gateway-windows.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent-500 px-3 text-sm font-medium text-white hover:bg-accent-600"><Download className="h-4 w-4" />Windows installer</a>
+                      <a href="/nvr-gateway/nimbus-nvr-gateway-linux.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface-0 px-3 text-sm font-medium text-ink-900 hover:bg-surface-50 dark:border-dark-border dark:bg-dark-surface dark:text-white"><Download className="h-4 w-4" />Linux installer</a>
+                    </div>
+                  </div>
+                </div>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Windows</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Run <code>install.ps1</code> as Administrator. The installer registers the gateway to start automatically with Windows.</p></div>
+                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Linux</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Run <code>sudo ./install.sh</code>. The installer registers a systemd service and starts it automatically.</p></div>
+                </div>
+              </div>
 
               <div className="mt-5 rounded-xl border border-line p-4 dark:border-dark-border">
-                <p className="font-medium">1. Create a gateway</p>
+                <p className="font-medium">1. Create and enroll a gateway</p>
                 <div className="mt-3 flex gap-2 max-w-lg">
                   <Input label="Gateway / NVR name" value={cctvName} onChange={e => setCctvName(e.target.value)} placeholder="Office NVR" />
                   <Button className="mt-7" loading={cctvLoading} disabled={!cctvName.trim()} onClick={async () => { setCctvLoading(true); try { const d = await cctvApi.create(cctvName.trim()); setCctvDevices(x => [d, ...x]); setNewCctvEnrollment({ id: d.id, name: d.name, code: d.enrollmentCode }); setCctvName(''); showToast('Gateway created. Use the one-time enrollment code during gateway installation.') } catch (err) { showToast(getErrorMessage(err, 'Could not create CCTV gateway.'), 'error') } finally { setCctvLoading(false) } }}>Create</Button>
@@ -217,13 +237,16 @@ export default function Settings() {
                 {newCctvEnrollment && (
                   <div className="mt-4 rounded-xl border border-accent-200 bg-accent-50 p-4 dark:border-accent-900/40 dark:bg-accent-900/10">
                     <p className="font-medium">One-time gateway enrollment code</p>
-                    <p className="mt-2 font-mono text-lg tracking-wider">{newCctvEnrollment.code}</p>
-                    <p className="mt-2 text-xs text-ink-500">Expires in 24 hours. Install the Nimbus NVR Gateway on a machine on the same LAN as this NVR, then enter this code in the gateway installer. Docker is not required. After enrollment, configure the NVR here. The permanent gateway token is never shown in Nimbus.</p>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <p className="font-mono text-lg tracking-wider">{newCctvEnrollment.code}</p>
+                      <Button size="sm" variant="secondary" onClick={async () => { await navigator.clipboard?.writeText(newCctvEnrollment.code); setCopiedEnrollment(true); window.setTimeout(() => setCopiedEnrollment(false), 1800) }}><Copy className="h-3.5 w-3.5" />{copiedEnrollment ? 'Copied' : 'Copy code'}</Button>
+                    </div>
+                    <p className="mt-2 text-xs text-ink-500">Expires in 24 hours and can only be used once. Install the gateway on a machine that can reach this NVR, then enter the code in the installer. The permanent gateway token is stored locally by the gateway and is never shown in Nimbus.</p>
                   </div>
                 )}
               </div>
 
-              {newCctvEnrollment && (
+              {(newCctvEnrollment || editingCctvId) && (
                 <div className="mt-5 rounded-xl border border-line p-4 dark:border-dark-border">
                   <p className="font-medium">2. Configure the NVR</p>
                   <div className="mt-4 grid gap-4 sm:grid-cols-2">
@@ -243,7 +266,7 @@ export default function Settings() {
                     ))}
                   </div>
                   <div className="mt-5 flex justify-end">
-                    <Button loading={cctvLoading} onClick={async () => { setCctvLoading(true); try { await cctvApi.configure(newCctvEnrollment.id, { ...cctvConfig, cameras: cctvCameras }); setCctvDevices(x => x.map(d => d.id === newCctvEnrollment.id ? { ...d, status: 'ACTIVE', nvrHost: cctvConfig.nvrHost, camerasConfigured: cctvCameras.length, segmentSeconds: cctvConfig.segmentSeconds } : d)); showToast('NVR configuration saved. The gateway will pick it up automatically.') } catch (err) { showToast(getErrorMessage(err, 'Could not save NVR configuration.'), 'error') } finally { setCctvLoading(false) } }}>Save NVR configuration</Button>
+                    <Button loading={cctvLoading} onClick={async () => { setCctvLoading(true); try { await cctvApi.configure(newCctvEnrollment?.id ?? editingCctvId!, { ...cctvConfig, cameras: cctvCameras }); setCctvDevices(x => x.map(d => d.id === (newCctvEnrollment?.id ?? editingCctvId) ? { ...d, status: 'ACTIVE', nvrHost: cctvConfig.nvrHost, camerasConfigured: cctvCameras.length, segmentSeconds: cctvConfig.segmentSeconds } : d)); showToast('NVR configuration saved. The gateway will pick it up automatically.') } catch (err) { showToast(getErrorMessage(err, 'Could not save NVR configuration.'), 'error') } finally { setCctvLoading(false) } }}>Save NVR configuration</Button>
                   </div>
                 </div>
               )}
@@ -251,7 +274,7 @@ export default function Settings() {
               <div className="mt-6 space-y-3">
                 {cctvDevices.map(d => (
                   <div key={d.id} className="rounded-xl border border-line p-4 dark:border-dark-border">
-                    <div className="flex items-center justify-between gap-4"><div><p className="font-medium">{d.name}</p><p className="text-xs text-ink-500">{d.status === 'ACTIVE' ? '● Connected/configured' : '● Waiting for gateway enrollment'} · {d.camerasConfigured ?? 0} camera(s) · {d.lastUploadAt ? `last upload ${new Date(d.lastUploadAt).toLocaleString()}` : 'no uploads yet'}</p></div><Button variant="danger" size="sm" onClick={async () => { if (!window.confirm(`Remove ${d.name}?`)) return; try { await cctvApi.remove(d.id); setCctvDevices(x => x.filter(i => i.id !== d.id)); if (newCctvEnrollment?.id === d.id) setNewCctvEnrollment(null); showToast('CCTV gateway removed.') } catch (err) { showToast(getErrorMessage(err, 'Could not remove CCTV gateway.'), 'error') } }}>Remove</Button></div>
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="font-medium">{d.name}</p><p className="text-xs text-ink-500">{d.status !== 'ACTIVE' ? '● Waiting for gateway enrollment' : d.lastSeenAt && Date.now() - new Date(d.lastSeenAt).getTime() < 120000 ? '● Gateway online' : '● Gateway offline'} · {d.camerasConfigured ?? 0} camera(s) · {d.lastUploadAt ? `last upload ${new Date(d.lastUploadAt).toLocaleString()}` : 'no uploads yet'}</p></div><div className="flex gap-2"><Button variant="secondary" size="sm" onClick={() => { setEditingCctvId(d.id); setNewCctvEnrollment(null); setCctvConfig({ nvrHost: d.nvrHost ?? '', nvrUsername: d.nvrUsername ?? '', nvrPassword: '', segmentSeconds: d.segmentSeconds ?? 300, uploadPollSeconds: d.uploadPollSeconds ?? 15 }); setCctvCameras([{ name: 'Camera 01', rtspUrl: '', enabled: true }]) }}><RefreshCw className="h-3.5 w-3.5" />{d.status === 'ACTIVE' ? 'Reconfigure' : 'Configure'}</Button><Button variant="danger" size="sm" onClick={async () => { if (!window.confirm(`Remove ${d.name}?`)) return; try { await cctvApi.remove(d.id); setCctvDevices(x => x.filter(i => i.id !== d.id)); if (newCctvEnrollment?.id === d.id) setNewCctvEnrollment(null); if (editingCctvId === d.id) setEditingCctvId(null); showToast('CCTV gateway removed.') } catch (err) { showToast(getErrorMessage(err, 'Could not remove CCTV gateway.'), 'error') } }}>Remove</Button></div></div>
                   </div>
                 ))}
                 {!cctvDevices.length && <p className="text-sm text-ink-500">No CCTV gateways configured.</p>}

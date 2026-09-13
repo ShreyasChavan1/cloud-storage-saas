@@ -16,7 +16,8 @@ function Ensure-WingetPackage($Id, $Name) {
 if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Ensure-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS" }
 if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Ensure-WingetPackage "Gyan.FFmpeg" "FFmpeg" }
 
-$ApiUrl = Read-Host "Nimbus API URL (for example https://api.nimbus.example.com)"
+$ApiUrl = "https://cloud-storage-saas-production.up.railway.app"
+Write-Host "Nimbus API: $ApiUrl"
 $Code = Read-Host "One-time Nimbus gateway enrollment code"
 if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "Nimbus API URL and enrollment code are required." }
 
@@ -39,4 +40,5 @@ $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccou
 Register-ScheduledTask -TaskName "Nimbus NVR Gateway" -Action $Action -Trigger $Trigger -Principal $Principal -Force | Out-Null
 Start-ScheduledTask -TaskName "Nimbus NVR Gateway"
 Write-Host "Nimbus NVR Gateway installed and started." -ForegroundColor Green
+Write-Host "The gateway will fetch its NVR configuration automatically from Nimbus." -ForegroundColor Green
 Write-Host "It runs automatically at Windows startup. NVR configuration is managed from Nimbus." -ForegroundColor Green
