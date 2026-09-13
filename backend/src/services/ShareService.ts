@@ -230,13 +230,11 @@ export const shareService = {
     }
 
     const fr = await fetch(
-      `${env.NEXTCLOUD_URL}/public.php/dav/files/${encodeURIComponent(
-        token,
-      )}/${encodeURIComponent(s.name)}`,
-      {
-        headers,
-      },
-    )
+  `${env.NEXTCLOUD_URL}/public.php/dav/files/${encodeURIComponent(token)}/`,
+  {
+    headers,
+  },
+)
 
     if (!fr.ok || !fr.body) {
       logger.warn(
