@@ -16,7 +16,6 @@ vi.mock('@/api/admin', () => ({
     setQuota: vi.fn(),
     setStatus: vi.fn(),
     deleteUser: vi.fn(),
-    resetPassword: vi.fn(),
   },
 }))
 import { adminApi } from '@/api/admin'
@@ -28,6 +27,7 @@ const sampleUser = {
   id: 'user-1',
   name: 'Asha Kapoor',
   email: 'asha@example.com',
+  phoneNumber: '+91 98765 43210',
   avatarInitials: 'AK',
   role: 'USER' as const,
   status: 'ACTIVE' as const,

@@ -18,8 +18,8 @@ interface AuthResponse {
 // Every call here unwraps the backend's { success, data } envelope once,
 // so nothing above this file ever touches that shape directly.
 export const authApi = {
-  register: (name: string, email: string, password: string) =>
-    api.post<{ data: AuthResponse }>('/auth/register', { name, email, password }).then((r) => r.data.data),
+  register: (name: string, email: string, phoneNumber: string, password: string) =>
+    api.post<{ data: AuthResponse }>('/auth/register', { name, email, phoneNumber, password }).then((r) => r.data.data),
 
   login: (email: string, password: string) =>
     api.post<{ data: AuthResponse }>('/auth/login', { email, password }).then((r) => r.data.data),

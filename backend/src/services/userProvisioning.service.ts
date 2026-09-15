@@ -11,6 +11,7 @@ import { UserWithPlan } from '../models/user.model'
 export interface ProvisionUserInput {
   name: string
   email: string
+  phoneNumber: string
   password: string
   // Omitted → resolves to the seeded default plan, exactly like a normal
   // self-registration always has. Only admin-initiated creation (Phase 10)
@@ -68,6 +69,7 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
   const user = await userRepository.create({
     name: input.name,
     email: input.email,
+    phoneNumber: input.phoneNumber,
     passwordHash,
     role: input.role ?? 'USER',
     plan: { connect: { id: plan.id } },

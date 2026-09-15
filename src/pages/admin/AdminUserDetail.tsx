@@ -2,7 +2,6 @@ import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import {
   ArrowLeft,
-  KeyRound,
   Ban,
   PlayCircle,
   Trash2,
@@ -23,7 +22,6 @@ import { ProgressBar } from '@/components/ui/ProgressBar'
 import { StorageRing } from '@/components/ui/StorageRing'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { PromptDialog } from '@/components/ui/PromptDialog'
-import { ResetPasswordDialog } from '@/components/admin/ResetPasswordDialog'
 import {
   useAdminUser,
   useAdminUserStorage,
@@ -76,7 +74,6 @@ export default function AdminUserDetail() {
   const setQuota = useSetUserQuota()
   const revokeSession = useRevokeSession(userId ?? '')
 
-  const [resetOpen, setResetOpen] = useState(false)
   const [statusConfirmOpen, setStatusConfirmOpen] = useState(false)
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [quotaPromptOpen, setQuotaPromptOpen] = useState(false)
@@ -194,6 +191,7 @@ export default function AdminUserDetail() {
                 <Badge tone={user.status === 'ACTIVE' ? 'success' : 'danger'}>{user.status}</Badge>
               </div>
               <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">{user.email}</p>
+              {user.phoneNumber && <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">{user.phoneNumber}</p>}
               <p className="mt-0.5 text-xs text-ink-400">
                 {user.plan ?? 'No plan'} · Joined {new Date(user.createdAt).toLocaleDateString()}
               </p>
@@ -201,10 +199,6 @@ export default function AdminUserDetail() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setResetOpen(true)}>
-              <KeyRound className="h-4 w-4" />
-              Reset password
-            </Button>
             <Button variant="secondary" size="sm" onClick={() => setStatusConfirmOpen(true)}>
               {user.status === 'ACTIVE' ? <Ban className="h-4 w-4" /> : <PlayCircle className="h-4 w-4" />}
               {user.status === 'ACTIVE' ? 'Suspend' : 'Activate'}
@@ -357,7 +351,6 @@ export default function AdminUserDetail() {
         )}
       </Card>
 
-      <ResetPasswordDialog open={resetOpen} userId={user.id} userEmail={user.email} onClose={() => setResetOpen(false)} />
 
       <ConfirmDialog
         open={statusConfirmOpen}

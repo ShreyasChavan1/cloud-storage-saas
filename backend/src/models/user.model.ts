@@ -31,6 +31,7 @@ export interface AdminUserDTO {
   id: string
   name: string
   email: string
+  phoneNumber: string | null
   avatarInitials: string
   role: 'USER' | 'ADMIN'
   status: 'ACTIVE' | 'SUSPENDED'
@@ -43,6 +44,7 @@ export function toAdminUserDTO(user: UserWithPlan): AdminUserDTO {
     id: user.id,
     name: user.name,
     email: user.email,
+    phoneNumber: user.phoneNumber,
     avatarInitials: initialsFromName(user.name),
     role: user.role,
     status: user.status,

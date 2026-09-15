@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, MoreVertical, ChevronLeft, ChevronRight, UserPlus, KeyRound, Ban, PlayCircle, Trash2 } from 'lucide-react'
+import { Search, MoreVertical, ChevronLeft, ChevronRight, UserPlus, Ban, PlayCircle, Trash2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
@@ -8,7 +8,6 @@ import { Avatar } from '@/components/ui/Avatar'
 import { DropdownMenu } from '@/components/ui/DropdownMenu'
 import { ConfirmDialog } from '@/components/ui/ConfirmDialog'
 import { CreateUserDialog } from './CreateUserDialog'
-import { ResetPasswordDialog } from './ResetPasswordDialog'
 import { useAdminUsers } from '@/hooks/useAdminUsers'
 import { useSetUserStatus, useDeleteUser } from '@/hooks/useAdminMutations'
 import { useToast } from '@/context/ToastContext'
@@ -37,7 +36,6 @@ export function AdminUsersTable() {
   const [page, setPage] = useState(1)
   const [statusFilter, setStatusFilter] = useState<'' | 'ACTIVE' | 'SUSPENDED'>('')
   const [createOpen, setCreateOpen] = useState(false)
-  const [resetTarget, setResetTarget] = useState<AdminUser | null>(null)
   const [statusTarget, setStatusTarget] = useState<AdminUser | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<AdminUser | null>(null)
 
@@ -146,7 +144,7 @@ export function AdminUsersTable() {
                   <Avatar initials={u.avatarInitials} />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink-900 dark:text-white">{u.name}</p>
-                    <p className="truncate text-xs text-ink-400">{u.email}</p>
+                    <p className="truncate text-xs text-ink-400">{u.email}</p>{u.phoneNumber && <p className="truncate text-xs text-ink-400">{u.phoneNumber}</p>}
                   </div>
                 </div>
                 <span className="hidden sm:block">
@@ -169,11 +167,6 @@ export function AdminUsersTable() {
                       </button>
                     }
                     items={[
-                      {
-                        label: 'Reset password',
-                        icon: <KeyRound className="h-4 w-4" />,
-                        onSelect: () => setResetTarget(u),
-                      },
                       {
                         label: u.status === 'ACTIVE' ? 'Suspend' : 'Activate',
                         icon:
@@ -226,14 +219,6 @@ export function AdminUsersTable() {
 
       <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
 
-      {resetTarget && (
-        <ResetPasswordDialog
-          open
-          userId={resetTarget.id}
-          userEmail={resetTarget.email}
-          onClose={() => setResetTarget(null)}
-        />
-      )}
 
       <ConfirmDialog
         open={!!statusTarget}

@@ -9,11 +9,18 @@ export const passwordField = z
   .min(8, 'Password must be at least 8 characters')
   .max(72, 'Password must be at most 72 characters')
 export const personNameField = z.string().trim().min(2, 'Name must be at least 2 characters').max(80)
+export const phoneNumberField = z
+  .string()
+  .trim()
+  .min(7, 'Phone number must be at least 7 characters')
+  .max(25, 'Phone number must be at most 25 characters')
+  .regex(/^\+?[0-9\s().-]+$/, 'Enter a valid phone number')
 
 export const registerSchema = z.object({
   body: z.object({
     name: personNameField,
     email: emailField,
+    phoneNumber: phoneNumberField,
     password: passwordField,
   }),
 })

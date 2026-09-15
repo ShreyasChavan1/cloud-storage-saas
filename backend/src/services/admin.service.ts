@@ -11,9 +11,6 @@ import { toAdminUserDTO, AdminUserDTO } from '../models/user.model'
 import { toSessionDTO, SessionDTO } from '../models/session.model'
 import { toPaymentDTO, PaymentDTO } from '../models/payment.model'
 import { toPlanDTO, PlanDTO } from '../models/plan.model'
-import { hashPassword } from '../utils/password'
-import { encrypt } from '../utils/encryption'
-import { generateRandomToken } from '../utils/token'
 import { ApiError } from '../utils/ApiError'
 import { logger } from '../config/logger'
 import {
@@ -83,6 +80,7 @@ export const adminService = {
     const user = await provisionUser({
       name: input.name,
       email: input.email,
+      phoneNumber: input.phoneNumber,
       password: input.password,
       role: input.role,
       planId: input.planId,
@@ -144,67 +142,6 @@ export const adminService = {
     await userRepository.delete(id)
   },
 
-  // Admin-driven password reset. Unlike authService.forgotPassword (which
-  // only ever hands back a token outside production, because that
-  // endpoint is PUBLIC and there's no email transport to deliver it any
-  // other way), this one always returns a generated password when it
-  // generates one — the caller here is an authenticated admin, not an
-  // anonymous requester, and the whole point of this endpoint is for them
-  // to see it and relay it to the user out-of-band.
-  async resetPassword(id: string, newPassword: string | undefined): Promise<{ temporaryPassword?: string }> {
-    const target = await getRequiredUser(id)
-    if (!target.nextcloudUsername) {
-      throw ApiError.internal('This account has no storage backend provisioned')
-    }
-
-    const wasGenerated = !newPassword
-    // 8 random bytes, hex-encoded → 16 characters, well inside the
-    // 8-72 char passwordField range and far stronger than it needs to be
-    // for something meant to be replaced on first real login.
-    const finalPassword = newPassword ?? generateRandomToken(8)
-
-    // Nextcloud first: if this fails, the Postgres passwordHash is left
-    // completely untouched, so the login password and the Nextcloud
-    // account password can never drift out of sync with each other (see
-    // backend/README.md's note on why register() keeps them paired).
-    let webdavPassword: string
-    try {
-      const result = await nextcloudService.changePassword(target.nextcloudUsername, finalPassword)
-      webdavPassword = result.webdavPassword
-    } catch (err) {
-      // Check the specific, expected case FIRST — a weak password an
-      // admin typed in isn't a failure worth an error-level log line
-      // (only genuine outages/unexpected agent errors get logged below).
-      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
-        throw ApiError.badRequest(
-          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
-        )
-      }
-      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
-      logger.error({ userId: id, detail }, 'Nextcloud password change failed — Postgres password left unchanged')
-      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
-    }
-
-    await userRepository.update(id, {
-      passwordHash: await hashPassword(finalPassword),
-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
-    })
-
-    // An existing session shouldn't keep coasting on the credential that
-    // was just invalidated — force everything back through a fresh login.
-    await sessionRepository.deleteAllForUser(id)
-
-    return wasGenerated ? { temporaryPassword: finalPassword } : {}
-  },
-
-  // Deliberately does NOT touch `planId` or the Plan/Subscription
-  // relationship — this is a direct override of the Nextcloud account's
-  // storage ceiling via the existing (previously unused outside tests)
-  // nextcloudService.setQuota, kept fully separate from the
-  // subscription/billing concept. Conflating the two would mean an
-  // admin's one-off quota bump either silently misrepresents what plan a
-  // user is nominally "on", or forces inventing a new pseudo-plan just to
-  // describe an ad-hoc override — neither is what this endpoint is for.
   async setUserQuota(id: string, input: UpdateUserQuotaInput): Promise<void> {
     const target = await getRequiredUser(id)
     if (!target.nextcloudUsername) {

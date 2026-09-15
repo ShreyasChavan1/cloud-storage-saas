@@ -31,6 +31,7 @@ const app = createApp()
 const testUser = {
   name: 'Test User',
   email: `test-${Date.now()}@example.com`,
+  phoneNumber: '+91 98765 43210',
   password: 'TestPassword123!',
 }
 

@@ -110,6 +110,7 @@ model User {
   id           String @id @default(uuid())
   name         String
   email        String @unique
+  phoneNumber  String?    @map("phone_number")
   passwordHash String     @map("password_hash")
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)

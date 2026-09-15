@@ -7,7 +7,7 @@ interface AuthContextValue {
   isAuthenticated: boolean
   loading: boolean
   login: (email: string, password: string) => Promise<void>
-  register: (name: string, email: string, password: string) => Promise<void>
+  register: (name: string, email: string, phoneNumber: string, password: string) => Promise<void>
   logout: () => Promise<void>
   // Lets other parts of the app (e.g. after a profile update) update the
   // user AuthContext holds without a full re-login.
@@ -39,8 +39,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(user)
   }
 
-  const register = async (name: string, email: string, password: string) => {
-    const { accessToken, user } = await authApi.register(name, email, password)
+  const register = async (name: string, email: string, phoneNumber: string, password: string) => {
+    const { accessToken, user } = await authApi.register(name, email, phoneNumber, password)
     setAccessToken(accessToken)
     setUser(user)
   }

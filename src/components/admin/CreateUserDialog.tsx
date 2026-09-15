@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Dices } from 'lucide-react'
+import { Dices, Phone } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAdminPlans } from '@/hooks/useAdminUsers'
@@ -13,9 +13,10 @@ interface CreateUserDialogProps {
   onClose: () => void
 }
 
-const initialForm: { name: string; email: string; password: string; role: 'USER' | 'ADMIN'; planId: string } = {
+const initialForm: { name: string; email: string; phoneNumber: string; password: string; role: 'USER' | 'ADMIN'; planId: string } = {
   name: '',
   email: '',
+  phoneNumber: '',
   password: '',
   role: 'USER',
   planId: '',
@@ -49,6 +50,7 @@ export function CreateUserDialog({ open, onClose }: CreateUserDialogProps) {
       {
         name: form.name.trim(),
         email: form.email.trim(),
+        phoneNumber: form.phoneNumber.trim(),
         password: form.password,
         role: form.role,
         planId: form.planId || undefined,
@@ -88,6 +90,15 @@ export function CreateUserDialog({ open, onClose }: CreateUserDialogProps) {
             type="email"
             value={form.email}
             onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            required
+          />
+          <Input
+            label="Phone number"
+            type="tel"
+            placeholder="+91 98765 43210"
+            icon={<Phone className="h-4 w-4" />}
+            value={form.phoneNumber}
+            onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
             required
           />
           <div>

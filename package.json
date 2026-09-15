@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "prebuild": "node scripts/build-nvr-gateway-zips.mjs",
+    "prebuild": "node backend/scripts/build-nvr-gateway-zips.mjs",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "lint": "eslint .",

@@ -1,6 +1,6 @@
 import { FormEvent, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { Mail, Lock, User } from 'lucide-react'
+import { Mail, Lock, User, Phone } from 'lucide-react'
 import { AuthLayout } from '@/components/layout/AuthLayout'
 import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
@@ -12,13 +12,14 @@ export default function Register() {
   const navigate = useNavigate()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
+  const [phoneNumber, setPhoneNumber] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!name || !email || !password) {
+    if (!name || !email || !phoneNumber || !password) {
       setError('Fill in every field to create your account.')
       return
     }
@@ -29,7 +30,7 @@ export default function Register() {
     setError('')
     setLoading(true)
     try {
-      await register(name, email, password)
+      await register(name, email, phoneNumber, password)
       navigate('/dashboard')
     } catch (err) {
       const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
@@ -44,6 +45,7 @@ export default function Register() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Input label="Full name" placeholder="Asha Kapoor" icon={<User className="h-4 w-4" />} value={name} onChange={(e) => setName(e.target.value)} />
         <Input label="Email" type="email" placeholder="you@example.com" icon={<Mail className="h-4 w-4" />} value={email} onChange={(e) => setEmail(e.target.value)} />
+        <Input label="Phone number" type="tel" placeholder="+91 98765 43210" icon={<Phone className="h-4 w-4" />} value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
         <Input label="Password" type="password" placeholder="At least 8 characters" icon={<Lock className="h-4 w-4" />} value={password} onChange={(e) => setPassword(e.target.value)} error={error} />
         <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">Create account</Button>
       </form>

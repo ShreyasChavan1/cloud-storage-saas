@@ -44,18 +44,6 @@ export function useDeleteUser() {
   })
 }
 
-export function useResetUserPassword() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: ({ id, password }: { id: string; password?: string }) => adminApi.resetPassword(id, password),
-    // A reset revokes every session for that user (see
-    // admin.service.ts's resetPassword) — the sessions list would go
-    // stale otherwise.
-    onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: adminQueryKeys.sessions(id) })
-    },
-  })
-}
 
 export function useSetUserQuota() {
   const queryClient = useQueryClient()

@@ -45,10 +45,6 @@ export const adminController = {
     return sendSuccess(res, { deleted: true })
   }),
 
-  resetPassword: asyncHandler(async (req: Request, res: Response) => {
-    const result = await adminService.resetPassword(req.params.id, req.body.password)
-    return sendSuccess(res, result)
-  }),
 
   setUserQuota: asyncHandler(async (req: Request, res: Response) => {
     await adminService.setUserQuota(req.params.id, req.body)

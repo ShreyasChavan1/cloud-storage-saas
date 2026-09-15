@@ -8,7 +8,6 @@ import {
   userIdParamSchema,
   createUserSchema,
   updateUserStatusSchema,
-  resetPasswordSchema,
   updateUserQuotaSchema,
   revokeSessionSchema,
 } from '../validators/admin.validator'
@@ -30,7 +29,6 @@ router.get('/users/:id', validate(userIdParamSchema), adminController.getUser)
 router.delete('/users/:id', validate(userIdParamSchema), adminController.deleteUser)
 
 router.patch('/users/:id/status', validate(updateUserStatusSchema), adminController.setUserStatus)
-router.post('/users/:id/reset-password', validate(resetPasswordSchema), adminController.resetPassword)
 router.patch('/users/:id/quota', validate(updateUserQuotaSchema), adminController.setUserQuota)
 
 router.get('/users/:id/storage', validate(userIdParamSchema), adminController.getUserStorage)

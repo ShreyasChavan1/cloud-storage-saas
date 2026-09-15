@@ -49,6 +49,7 @@ export const authService = {
     const user = await provisionUser({
       name: input.name,
       email: input.email,
+      phoneNumber: input.phoneNumber,
       password: input.password,
     })
 

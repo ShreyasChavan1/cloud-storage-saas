@@ -3,6 +3,7 @@ import { AuthUser } from './auth'
 import { QuotaInfo, StorageStats } from './files'
 
 export type AdminUser = AuthUser & {
+  phoneNumber: string | null
   status: 'ACTIVE' | 'SUSPENDED'
   createdAt: string
 }
@@ -57,6 +58,7 @@ export interface ListUsersParams {
 export interface CreateUserInput {
   name: string
   email: string
+  phoneNumber: string
   password: string
   role?: 'USER' | 'ADMIN'
   planId?: string
@@ -89,16 +91,6 @@ export const adminApi = {
       .then((r) => r.data.data.user),
 
   deleteUser: (id: string) => api.delete(`/admin/users/${id}`).then(() => undefined),
-
-  // Returns `{}` when the caller supplied their own password (nothing to
-  // hand back), or `{ temporaryPassword }` when the backend generated one
-  // — see admin.service.ts's resetPassword for why it's safe to return
-  // the plaintext here (an authenticated admin action) but not from the
-  // public forgot-password flow.
-  resetPassword: (id: string, password?: string) =>
-    api
-      .post<{ data: { temporaryPassword?: string } }>(`/admin/users/${id}/reset-password`, { password })
-      .then((r) => r.data.data),
 
   setQuota: (id: string, storageLimitGb: number) =>
     api.patch(`/admin/users/${id}/quota`, { storageLimitGb }).then(() => undefined),
