@@ -110,7 +110,8 @@ model User {
   id           String @id @default(uuid())
   name         String
   email        String @unique
-  phoneNumber  String?    @map("phone_number")
+  phoneNumber  String? @map("phone_number")
+  emailVerifiedAt DateTime? @map("email_verified_at")
   passwordHash String     @map("password_hash")
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
@@ -145,6 +146,7 @@ model User {
   favorites            Favorite[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
   notificationPreferences NotificationPreference?
   cctvDevices CctvDevice[]
   shares Share[]
@@ -387,6 +389,19 @@ model Session {
 // Issued by POST /forgot-password. Only the hash is stored — same pattern
 // as Session — so a leaked DB row can't be used to reset someone's password.
 // `usedAt` prevents a token being replayed after a successful reset.
+model EmailVerificationToken {
+  id        String   @id @default(uuid())
+  userId    String   @map("user_id")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique @map("token_hash")
+  expiresAt DateTime @map("expires_at")
+  usedAt   DateTime? @map("used_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
 model PasswordResetToken {
   id     String @id @default(uuid())
   userId String @map("user_id")

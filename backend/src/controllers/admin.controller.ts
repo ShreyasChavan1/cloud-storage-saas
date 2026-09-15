@@ -45,7 +45,6 @@ export const adminController = {
     return sendSuccess(res, { deleted: true })
   }),
 
-
   setUserQuota: asyncHandler(async (req: Request, res: Response) => {
     await adminService.setUserQuota(req.params.id, req.body)
     return sendSuccess(res, { updated: true })

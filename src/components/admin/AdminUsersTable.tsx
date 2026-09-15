@@ -144,7 +144,8 @@ export function AdminUsersTable() {
                   <Avatar initials={u.avatarInitials} />
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-ink-900 dark:text-white">{u.name}</p>
-                    <p className="truncate text-xs text-ink-400">{u.email}</p>{u.phoneNumber && <p className="truncate text-xs text-ink-400">{u.phoneNumber}</p>}
+                    <p className="truncate text-xs text-ink-400">{u.email}</p>
+                    <p className="truncate text-[11px] text-ink-400">{u.phoneNumber ?? 'No phone'} · {u.emailVerified ? 'Email verified' : 'Email unverified'}</p>
                   </div>
                 </div>
                 <span className="hidden sm:block">
@@ -218,7 +219,6 @@ export function AdminUsersTable() {
       )}
 
       <CreateUserDialog open={createOpen} onClose={() => setCreateOpen(false)} />
-
 
       <ConfirmDialog
         open={!!statusTarget}

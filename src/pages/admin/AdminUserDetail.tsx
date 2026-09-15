@@ -191,7 +191,7 @@ export default function AdminUserDetail() {
                 <Badge tone={user.status === 'ACTIVE' ? 'success' : 'danger'}>{user.status}</Badge>
               </div>
               <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">{user.email}</p>
-              {user.phoneNumber && <p className="mt-0.5 text-sm text-ink-500 dark:text-ink-400">{user.phoneNumber}</p>}
+              <p className="mt-0.5 text-xs text-ink-400">{user.phoneNumber ?? 'No phone number'} · {user.emailVerified ? 'Email verified' : 'Email unverified'}</p>
               <p className="mt-0.5 text-xs text-ink-400">
                 {user.plan ?? 'No plan'} · Joined {new Date(user.createdAt).toLocaleDateString()}
               </p>

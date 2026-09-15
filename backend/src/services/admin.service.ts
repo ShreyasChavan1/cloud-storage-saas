@@ -53,6 +53,7 @@ export const adminService = {
       where.OR = [
         { name: { contains: query.search, mode: 'insensitive' } },
         { email: { contains: query.search, mode: 'insensitive' } },
+        { phoneNumber: { contains: query.search } },
       ]
     }
     if (query.role) where.role = query.role
@@ -82,6 +83,7 @@ export const adminService = {
       email: input.email,
       phoneNumber: input.phoneNumber,
       password: input.password,
+      emailVerifiedAt: new Date(),
       role: input.role,
       planId: input.planId,
     })
@@ -142,6 +144,14 @@ export const adminService = {
     await userRepository.delete(id)
   },
 
+  // Deliberately does NOT touch `planId` or the Plan/Subscription
+  // relationship — this is a direct override of the Nextcloud account's
+  // storage ceiling via the existing (previously unused outside tests)
+  // nextcloudService.setQuota, kept fully separate from the
+  // subscription/billing concept. Conflating the two would mean an
+  // admin's one-off quota bump either silently misrepresents what plan a
+  // user is nominally "on", or forces inventing a new pseudo-plan just to
+  // describe an ad-hoc override — neither is what this endpoint is for.
   async setUserQuota(id: string, input: UpdateUserQuotaInput): Promise<void> {
     const target = await getRequiredUser(id)
     if (!target.nextcloudUsername) {

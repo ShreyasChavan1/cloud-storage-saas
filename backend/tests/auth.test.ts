@@ -31,7 +31,7 @@ const app = createApp()
 const testUser = {
   name: 'Test User',
   email: `test-${Date.now()}@example.com`,
-  phoneNumber: '+91 98765 43210',
+  phoneNumber: '+919876543210',
   password: 'TestPassword123!',
 }
 
@@ -47,6 +47,7 @@ afterAll(async () => {
 
 describe('Auth flow', () => {
   let accessToken: string
+  let verificationToken: string
 
   it('registers a new user', async () => {
     const res = await request(app).post('/api/auth/register').send(testUser)
@@ -55,7 +56,16 @@ describe('Auth flow', () => {
     expect(res.body.success).toBe(true)
     expect(res.body.data.user.email).toBe(testUser.email)
     expect(res.body.data.user.avatarInitials).toBe('TU')
+    expect(res.body.data.verificationRequired).toBe(true)
+    verificationToken = res.body.data.devToken
+  })
+
+  it('verifies the email before login is allowed', async () => {
+    expect(verificationToken).toBeDefined()
+    const res = await request(app).post('/api/auth/verify-email').send({ token: verificationToken })
+    expect(res.status).toBe(200)
     expect(res.body.data.accessToken).toBeDefined()
+    expect(res.body.data.user.emailVerified).toBe(true)
   })
 
   it('rejects duplicate registration', async () => {

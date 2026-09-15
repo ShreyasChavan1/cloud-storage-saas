@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { emailField, passwordField, personNameField, phoneNumberField } from './auth.validator'
+import { emailField, passwordField, personNameField, phoneField } from './auth.validator'
 
 const uuidParam = z.string().uuid('Invalid id')
 
@@ -24,7 +24,7 @@ export const createUserSchema = z.object({
   body: z.object({
     name: personNameField,
     email: emailField,
-    phoneNumber: phoneNumberField,
+    phoneNumber: phoneField,
     password: passwordField,
     role: z.enum(['USER', 'ADMIN']).optional(),
     planId: z.string().uuid().optional(),

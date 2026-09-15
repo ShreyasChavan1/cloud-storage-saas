@@ -9,18 +9,13 @@ export const passwordField = z
   .min(8, 'Password must be at least 8 characters')
   .max(72, 'Password must be at most 72 characters')
 export const personNameField = z.string().trim().min(2, 'Name must be at least 2 characters').max(80)
-export const phoneNumberField = z
-  .string()
-  .trim()
-  .min(7, 'Phone number must be at least 7 characters')
-  .max(25, 'Phone number must be at most 25 characters')
-  .regex(/^\+?[0-9\s().-]+$/, 'Enter a valid phone number')
+export const phoneField = z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number')
 
 export const registerSchema = z.object({
   body: z.object({
     name: personNameField,
     email: emailField,
-    phoneNumber: phoneNumberField,
+    phoneNumber: phoneField,
     password: passwordField,
   }),
 })
@@ -48,3 +43,6 @@ export type RegisterInput = z.infer<typeof registerSchema>['body']
 export type LoginInput = z.infer<typeof loginSchema>['body']
 export type ForgotPasswordInput = z.infer<typeof forgotPasswordSchema>['body']
 export type UpdateProfileInput = z.infer<typeof updateProfileSchema>['body']
+
+export const verifyEmailSchema = z.object({ body: z.object({ token: z.string().min(20) }) })
+export const resendVerificationSchema = z.object({ body: z.object({ email: emailField }) })

@@ -41,3 +41,33 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
     clearTimeout(timeout)
   }
 }
+
+export async function sendEmailVerificationEmail(to: string, verificationUrl: string): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
+    throw new Error('Email verification delivery is not configured')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const safeUrl = escapeHtml(verificationUrl)
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: env.EMAIL_FROM,
+        to: [to],
+        subject: 'Verify your Nimbus email address',
+        text: `Welcome to Nimbus. Verify your email address: ${verificationUrl}\n\nThis link expires in ${env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN}. If you did not create this account, you can ignore this email.`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>Verify your Nimbus email</h2><p>Thanks for creating a Nimbus account. Click below to verify your email address.</p><p><a href="${safeUrl}">Verify email address</a></p><p>This link expires in ${escapeHtml(env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN)}.</p><p>If you did not create this account, you can ignore this email.</p></div>`,
+      }),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(`Email delivery failed: ${response.status} ${detail.slice(0, 500)}`)
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}

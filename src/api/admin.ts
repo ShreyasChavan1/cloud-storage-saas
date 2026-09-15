@@ -3,7 +3,6 @@ import { AuthUser } from './auth'
 import { QuotaInfo, StorageStats } from './files'
 
 export type AdminUser = AuthUser & {
-  phoneNumber: string | null
   status: 'ACTIVE' | 'SUSPENDED'
   createdAt: string
 }

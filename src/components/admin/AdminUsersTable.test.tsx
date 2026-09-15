@@ -33,11 +33,12 @@ function wrapper({ children }: { children: ReactNode }) {
   )
 }
 
-const sampleUser = (overrides: Partial<{ id: string; name: string; email: string; phoneNumber: string | null; role: 'USER' | 'ADMIN'; status: 'ACTIVE' | 'SUSPENDED' }> = {}) => ({
+const sampleUser = (overrides: Partial<{ id: string; name: string; email: string; role: 'USER' | 'ADMIN'; status: 'ACTIVE' | 'SUSPENDED' }> = {}) => ({
   id: 'user-1',
   name: 'Asha Kapoor',
   email: 'asha@example.com',
-  phoneNumber: '+91 98765 43210',
+  phoneNumber: '+919876543210',
+  emailVerified: true,
   avatarInitials: 'AK',
   role: 'USER' as const,
   status: 'ACTIVE' as const,

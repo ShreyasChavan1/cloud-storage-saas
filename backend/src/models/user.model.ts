@@ -14,6 +14,8 @@ export function toAuthUserDTO(user: UserWithPlan): AuthUserDTO {
     id: user.id,
     name: user.name,
     email: user.email,
+    phoneNumber: user.phoneNumber,
+    emailVerified: !!user.emailVerifiedAt,
     avatarInitials: initialsFromName(user.name),
     avatarUrl: user.avatarData ?? null,
     plan: user.plan?.name ?? null,
@@ -32,6 +34,7 @@ export interface AdminUserDTO {
   name: string
   email: string
   phoneNumber: string | null
+  emailVerified: boolean
   avatarInitials: string
   role: 'USER' | 'ADMIN'
   status: 'ACTIVE' | 'SUSPENDED'
@@ -45,6 +48,7 @@ export function toAdminUserDTO(user: UserWithPlan): AdminUserDTO {
     name: user.name,
     email: user.email,
     phoneNumber: user.phoneNumber,
+    emailVerified: !!user.emailVerifiedAt,
     avatarInitials: initialsFromName(user.name),
     role: user.role,
     status: user.status,

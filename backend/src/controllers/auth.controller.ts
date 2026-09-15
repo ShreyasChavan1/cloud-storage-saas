@@ -42,8 +42,7 @@ function sessionMetaFrom(req: Request) {
 
 export const authController = {
   register: asyncHandler(async (req: Request, res: Response) => {
-    const { refreshToken, ...result } = await authService.register(req.body, sessionMetaFrom(req))
-    setRefreshCookie(res, refreshToken)
+    const result = await authService.register(req.body, sessionMetaFrom(req))
     return sendSuccess(res, result, 201)
   }),
 
@@ -77,6 +76,17 @@ export const authController = {
       // Only present outside production when no mail transport is configured.
       ...(devToken ? { devToken } : {}),
     })
+  }),
+
+  verifyEmail: asyncHandler(async (req: Request, res: Response) => {
+    const { refreshToken, ...result } = await authService.verifyEmail(req.body.token, sessionMetaFrom(req))
+    setRefreshCookie(res, refreshToken)
+    return sendSuccess(res, result, 200)
+  }),
+
+  resendVerificationEmail: asyncHandler(async (req: Request, res: Response) => {
+    await authService.resendVerificationEmail(req.body.email)
+    return sendSuccess(res, { message: 'If the account exists and is not verified, a verification email has been sent.' })
   }),
 
   logout: asyncHandler(async (req: Request, res: Response) => {

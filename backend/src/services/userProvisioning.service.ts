@@ -11,8 +11,9 @@ import { UserWithPlan } from '../models/user.model'
 export interface ProvisionUserInput {
   name: string
   email: string
-  phoneNumber: string
   password: string
+  phoneNumber?: string
+  emailVerifiedAt?: Date | null
   // Omitted → resolves to the seeded default plan, exactly like a normal
   // self-registration always has. Only admin-initiated creation (Phase 10)
   // ever passes this explicitly.
@@ -70,6 +71,7 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
     name: input.name,
     email: input.email,
     phoneNumber: input.phoneNumber,
+    emailVerifiedAt: input.emailVerifiedAt,
     passwordHash,
     role: input.role ?? 'USER',
     plan: { connect: { id: plan.id } },

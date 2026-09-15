@@ -10,6 +10,8 @@ export interface AuthUserDTO {
   id: string
   name: string
   email: string
+  phoneNumber: string | null
+  emailVerified: boolean
   avatarInitials: string
   avatarUrl: string | null
   plan: string | null

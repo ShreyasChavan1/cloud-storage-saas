@@ -1,6 +1,6 @@
 import { useState, useEffect, FormEvent } from 'react'
 import { createPortal } from 'react-dom'
-import { Dices, Phone } from 'lucide-react'
+import { Dices } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { useAdminPlans } from '@/hooks/useAdminUsers'
@@ -33,7 +33,7 @@ function randomPassword() {
 }
 
 export function CreateUserDialog({ open, onClose }: CreateUserDialogProps) {
-  const [form, setForm] = useState(initialForm)
+  const [form, setForm] = useState({ ...initialForm, phoneNumber: '' })
   const { data: plans } = useAdminPlans()
   const createUser = useCreateUser()
   const { showToast } = useToast()
@@ -95,10 +95,9 @@ export function CreateUserDialog({ open, onClose }: CreateUserDialogProps) {
           <Input
             label="Phone number"
             type="tel"
-            placeholder="+91 98765 43210"
-            icon={<Phone className="h-4 w-4" />}
             value={form.phoneNumber}
             onChange={(e) => setForm((f) => ({ ...f, phoneNumber: e.target.value }))}
+            placeholder="+919876543210"
             required
           />
           <div>

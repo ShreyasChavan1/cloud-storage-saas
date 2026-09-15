@@ -44,7 +44,6 @@ export function useDeleteUser() {
   })
 }
 
-
 export function useSetUserQuota() {
   const queryClient = useQueryClient()
   return useMutation({

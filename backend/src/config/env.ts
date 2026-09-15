@@ -13,6 +13,8 @@ const envSchema = z.object({
   JWT_ACCESS_EXPIRES_IN: z.string().default('15m'),
   JWT_REFRESH_EXPIRES_IN: z.string().default('7d'),
   PASSWORD_RESET_TOKEN_EXPIRES_IN: z.string().default('30m'),
+  EMAIL_VERIFICATION_TOKEN_EXPIRES_IN: z.string().default('30m'),
+  CLIENT_EMAIL_VERIFICATION_URL: z.string().url().default('http://localhost:5173/verify-email'),
   CLIENT_RESET_URL: z.string().url().default('http://localhost:5173/reset-password'),
   RESEND_API_KEY: z.string().optional(),
   EMAIL_FROM: z.string().optional(),
@@ -88,6 +90,9 @@ const envSchema = z.object({
     }
     if (values.CLIENT_RESET_URL.includes('localhost')) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_RESET_URL'], message: 'CLIENT_RESET_URL must point to the production frontend in production' })
+    }
+    if (values.CLIENT_EMAIL_VERIFICATION_URL.includes('localhost')) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['CLIENT_EMAIL_VERIFICATION_URL'], message: 'CLIENT_EMAIL_VERIFICATION_URL must point to the production frontend in production' })
     }
   }
 })

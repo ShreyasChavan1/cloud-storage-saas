@@ -15,7 +15,8 @@ import { env } from '../config/env'
 import { logger } from '../config/logger'
 import { RegisterInput, LoginInput, ForgotPasswordInput } from '../validators/auth.validator'
 import { AuthResponseDTO } from '../types/auth.types'
-import { sendPasswordResetEmail } from './email.service'
+import { sendPasswordResetEmail, sendEmailVerificationEmail } from './email.service'
+import { emailVerificationTokenRepository } from '../repositories/emailVerificationToken.repository'
 
 // Best-effort request metadata, captured once at token-issue time and
 // shown on Phase 10's admin "active sessions" view — see
@@ -42,7 +43,7 @@ export const authService = {
   async register(
     input: RegisterInput,
     meta?: SessionMeta
-  ): Promise<AuthResponseDTO & { refreshToken: string }> {
+  ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true; devToken?: string }> {
     // Self-registration is always role USER on the seeded default plan —
     // see userProvisioning.service.ts, which this now shares with Phase
     // 10's admin-initiated account creation.
@@ -51,15 +52,59 @@ export const authService = {
       email: input.email,
       phoneNumber: input.phoneNumber,
       password: input.password,
+      emailVerifiedAt: null,
     })
+
+    const rawVerificationToken = generateRandomToken()
+    const verificationHash = hashToken(rawVerificationToken)
+    const verificationExpiresAt = new Date(Date.now() + ms(env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN))
+    await emailVerificationTokenRepository.create(user.id, verificationHash, verificationExpiresAt)
+    await emailVerificationTokenRepository.deleteAllForUserExcept(user.id, verificationHash)
+
+    const verificationUrl = `${env.CLIENT_EMAIL_VERIFICATION_URL}?token=${encodeURIComponent(rawVerificationToken)}`
+    try {
+      await sendEmailVerificationEmail(user.email, verificationUrl)
+    } catch (err) {
+      logger.error({ err, userId: user.id }, 'Email verification delivery failed')
+      if (env.NODE_ENV === 'production') {
+        throw ApiError.serviceUnavailable('Account created, but we could not send the verification email. Please try again later.')
+      }
+      return { user: toAuthUserDTO(user), verificationRequired: true as const, devToken: rawVerificationToken }
+    }
 
     if (user.nextcloudUsername) { try { await nextcloudService.setEmail(user.nextcloudUsername, user.email) } catch (err) { logger.warn({ userId:user.id, err }, 'Could not synchronize Nextcloud email during login') } }
 
-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
-
-    return { user: toAuthUserDTO(user), accessToken, refreshToken }
+    return { user: toAuthUserDTO(user), verificationRequired: true }
   },
 
+
+  async verifyEmail(token: string, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
+    const stored = await emailVerificationTokenRepository.findValidByHash(hashToken(token))
+    if (!stored) throw ApiError.badRequest('This email verification link is invalid or has expired.')
+
+    const user = await userRepository.findById(stored.userId)
+    if (!user) throw ApiError.badRequest('This email verification link is invalid or has expired.')
+
+    await userRepository.update(user.id, { emailVerifiedAt: new Date() })
+    await emailVerificationTokenRepository.markUsed(stored.id)
+
+    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
+    const verifiedUser = await userRepository.findById(user.id)
+    return { user: toAuthUserDTO(verifiedUser!), accessToken, refreshToken }
+  },
+
+  async resendVerificationEmail(email: string): Promise<void> {
+    const user = await userRepository.findByEmail(email)
+    if (!user || user.emailVerifiedAt) return
+
+    const rawToken = generateRandomToken()
+    const tokenHash = hashToken(rawToken)
+    const expiresAt = new Date(Date.now() + ms(env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN))
+    await emailVerificationTokenRepository.create(user.id, tokenHash, expiresAt)
+    await emailVerificationTokenRepository.deleteAllForUserExcept(user.id, tokenHash)
+    const url = `${env.CLIENT_EMAIL_VERIFICATION_URL}?token=${encodeURIComponent(rawToken)}`
+    await sendEmailVerificationEmail(user.email, url)
+  },
   async login(input: LoginInput, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
     const user = await userRepository.findByEmail(input.email)
     // Same message whether the email doesn't exist or the password is
@@ -79,6 +124,9 @@ export const authService = {
     // then a distinct, honest message once we know both are correct.
     if (user.status === 'SUSPENDED') {
       throw ApiError.forbidden('This account has been suspended. Contact support for help.')
+    }
+    if (!user.emailVerifiedAt) {
+      throw ApiError.forbidden('Please verify your email address before logging in.')
     }
 
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
@@ -113,6 +161,11 @@ export const authService = {
     // findById above), so this check is effectively free here — see the
     // UserStatus enum comment in schema.prisma for why this isn't also
     // done on every single authenticated request.
+    if (!user.emailVerifiedAt) {
+      await sessionRepository.deleteByHash(tokenHash)
+      throw ApiError.forbidden('Please verify your email address before logging in.')
+    }
+
     if (user.status === 'SUSPENDED') {
       await sessionRepository.deleteByHash(tokenHash)
       throw ApiError.forbidden('This account has been suspended. Contact support for help.')

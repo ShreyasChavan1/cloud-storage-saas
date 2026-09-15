@@ -23,6 +23,10 @@ export default function Register() {
       setError('Fill in every field to create your account.')
       return
     }
+    if (!/^\+?[1-9]\d{7,14}$/.test(phoneNumber.trim())) {
+      setError('Enter a valid phone number, including country code if possible.')
+      return
+    }
     if (password.length < 8) {
       setError('Password must be at least 8 characters.')
       return
@@ -30,8 +34,9 @@ export default function Register() {
     setError('')
     setLoading(true)
     try {
-      await register(name, email, phoneNumber, password)
-      navigate('/dashboard')
+      const result = await register(name, email, phoneNumber, password)
+      const token = result.devToken ? `&token=${encodeURIComponent(result.devToken)}` : ''
+      navigate(`/verify-email?email=${encodeURIComponent(email)}${token}`)
     } catch (err) {
       const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
       setError(message ?? 'Something went wrong. Please try again.')
@@ -45,7 +50,7 @@ export default function Register() {
       <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         <Input label="Full name" placeholder="Asha Kapoor" icon={<User className="h-4 w-4" />} value={name} onChange={(e) => setName(e.target.value)} />
         <Input label="Email" type="email" placeholder="you@example.com" icon={<Mail className="h-4 w-4" />} value={email} onChange={(e) => setEmail(e.target.value)} />
-        <Input label="Phone number" type="tel" placeholder="+91 98765 43210" icon={<Phone className="h-4 w-4" />} value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
+        <Input label="Phone number" type="tel" placeholder="+919876543210" icon={<Phone className="h-4 w-4" />} value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
         <Input label="Password" type="password" placeholder="At least 8 characters" icon={<Lock className="h-4 w-4" />} value={password} onChange={(e) => setPassword(e.target.value)} error={error} />
         <Button type="submit" size="lg" loading={loading} className="mt-2 w-full">Create account</Button>
       </form>
