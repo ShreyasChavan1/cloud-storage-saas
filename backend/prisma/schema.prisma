@@ -13,6 +13,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// Singleton row (fixed id) holding operator-editable settings that aren't
+// tied to any one user — currently just the support contact details shown
+// on the Support page. `upsert`'d rather than requiring a seed step, so a
+// fresh database with no row yet still falls back cleanly (see
+// support.service.ts) instead of the Support page ever erroring out.
+model AppSettings {
+  id String @id @default("singleton")
+  supportEmail String @map("support_email")
+  supportPhone String @map("support_phone")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  @@map("app_settings")
+}
+
 enum Role {
   USER
   ADMIN

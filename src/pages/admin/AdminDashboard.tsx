@@ -1,6 +1,7 @@
 import { Users, UserCheck, UserX, ShieldCheck, Radio } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { AdminUsersTable } from '@/components/admin/AdminUsersTable'
+import { SupportContactCard } from '@/components/admin/SupportContactCard'
 import { useAdminOverview } from '@/hooks/useAdminUsers'
 
 const cards = [

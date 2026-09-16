@@ -12,6 +12,7 @@ export const adminQueryKeys = {
   storageBreakdown: (id: string) => ['admin', 'users', id, 'storage-breakdown'] as const,
   payments: (id: string) => ['admin', 'users', id, 'payments'] as const,
   sessions: (id: string) => ['admin', 'users', id, 'sessions'] as const,
+  supportContact: ['admin', 'settings', 'support'] as const,
 }
 
 export function useAdminOverview() {
@@ -90,5 +91,12 @@ export function useAdminUserSessions(id: string | undefined) {
     queryKey: adminQueryKeys.sessions(id ?? ''),
     queryFn: () => adminApi.getUserSessions(id!),
     enabled: !!id,
+  })
+}
+
+export function useAdminSupportContact() {
+  return useQuery({
+    queryKey: adminQueryKeys.supportContact,
+    queryFn: adminApi.getSupportContact,
   })
 }

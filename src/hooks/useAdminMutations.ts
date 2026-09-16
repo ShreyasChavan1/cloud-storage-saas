@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi, CreateUserInput } from '@/api/admin'
+import { SupportContact } from '@/api/support'
 import { adminQueryKeys } from './useAdminUsers'
 
 // Broad-but-cheap: every mutation below changes something the users list
@@ -61,6 +62,16 @@ export function useRevokeSession(userId: string) {
     mutationFn: (sessionId: string) => adminApi.revokeSession(userId, sessionId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: adminQueryKeys.sessions(userId) })
+    },
+  })
+}
+
+export function useUpdateSupportContact() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: SupportContact) => adminApi.updateSupportContact(input),
+    onSuccess: (contact) => {
+      queryClient.setQueryData(adminQueryKeys.supportContact, contact)
     },
   })
 }

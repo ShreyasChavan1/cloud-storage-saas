@@ -71,3 +71,49 @@ export async function sendEmailVerificationEmail(to: string, verificationUrl: st
     clearTimeout(timeout)
   }
 }
+
+export async function sendSupportRequestEmail(params: {
+  toEmail: string
+  fromName: string
+  fromEmail: string
+  subject: string
+  message: string
+}): Promise<void> {
+  if (!env.RESEND_API_KEY || !env.EMAIL_FROM) {
+    throw new Error('Support email delivery is not configured')
+  }
+
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), 10_000)
+  try {
+    const safeName = escapeHtml(params.fromName)
+    const safeSubject = escapeHtml(params.subject)
+    // Message is user-typed free text, shown as HTML below - escape it,
+    // then turn newlines into <br> so paragraph breaks survive rendering
+    // (escapeHtml runs first so a literal '\n' in the text can't be used
+    // to smuggle in a raw '<br>' of the sender's own).
+    const safeMessageHtml = escapeHtml(params.message).replaceAll('\n', '<br>')
+    const response = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        from: env.EMAIL_FROM,
+        to: [params.toEmail],
+        reply_to: params.fromEmail,
+        subject: `[Nimbus Support] ${params.subject}`,
+        text: `From: ${params.fromName} <${params.fromEmail}>\n\n${params.message}`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>New support message</h2><p><strong>From:</strong> ${safeName} &lt;${escapeHtml(params.fromEmail)}&gt;</p><p><strong>Subject:</strong> ${safeSubject}</p><hr style="border:none;border-top:1px solid #e5e7eb" /><p>${safeMessageHtml}</p></div>`,
+      }),
+      signal: controller.signal,
+    })
+    if (!response.ok) {
+      const detail = await response.text()
+      throw new Error(`Email delivery failed: ${response.status} ${detail.slice(0, 500)}`)
+    }
+  } finally {
+    clearTimeout(timeout)
+  }
+}

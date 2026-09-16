@@ -27,3 +27,18 @@ export const passwordResetRateLimiter = rateLimit({
     sendError(res, 429, 'Too many password reset attempts. Please try again later.')
   },
 })
+
+// A logged-in user emailing the support inbox directly — separate from
+// passwordResetRateLimiter (different abuse shape: this one can spam the
+// owner's actual mailbox with arbitrary text, not just trigger repeat
+// token generation) and generous enough for someone genuinely following
+// up on an unanswered issue.
+export const supportMessageRateLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    sendError(res, 429, 'Too many support messages. Please wait a bit before sending another.')
+  },
+})

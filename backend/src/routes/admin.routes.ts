@@ -11,6 +11,7 @@ import {
   updateUserQuotaSchema,
   revokeSessionSchema,
 } from '../validators/admin.validator'
+import { updateSupportContactSchema } from '../validators/support.validator'
 
 const router = Router()
 
@@ -52,5 +53,8 @@ router.delete(
 // consistent with overview/listPlans above, the only other no-input
 // routes on this router.
 router.post('/reconcile-subscriptions', adminController.reconcileSubscriptions)
+
+router.get('/settings/support', adminController.getSupportContact)
+router.put('/settings/support', validate(updateSupportContactSchema), adminController.updateSupportContact)
 
 export default router

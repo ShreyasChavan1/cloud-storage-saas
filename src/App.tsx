@@ -8,6 +8,7 @@ import Dashboard from '@/pages/Dashboard'
 import Files from '@/pages/Files'
 import Settings from '@/pages/Settings'
 import MobileApp from '@/pages/MobileApp'
+import Support from '@/pages/Support'
 import Pricing from '@/pages/Pricing'
 import NotFound from '@/pages/NotFound'
 import PublicShare from '@/pages/PublicShare'
@@ -33,6 +34,7 @@ export default function App() {
         <Route path="/files" element={<Files />} />
         <Route path="/settings" element={<Settings />} />
         <Route path="/mobile-app" element={<MobileApp />} />
+        <Route path="/support" element={<Support />} />
         {/* adminOnly is a UX redirect only — the backend's requireAdmin
             middleware is the actual authorization boundary. A non-admin
             hitting these routes never reaches a point where admin data

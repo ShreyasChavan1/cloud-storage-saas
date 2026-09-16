@@ -1,6 +1,7 @@
 import { api } from '@/lib/api'
 import { AuthUser } from './auth'
 import { QuotaInfo, StorageStats } from './files'
+import { SupportContact } from './support'
 
 export type AdminUser = AuthUser & {
   status: 'ACTIVE' | 'SUSPENDED'
@@ -110,4 +111,10 @@ export const adminApi = {
 
   revokeSession: (id: string, sessionId: string) =>
     api.delete(`/admin/users/${id}/sessions/${sessionId}`).then(() => undefined),
+
+  getSupportContact: () =>
+    api.get<{ data: { contact: SupportContact } }>('/admin/settings/support').then((r) => r.data.data.contact),
+
+  updateSupportContact: (input: SupportContact) =>
+    api.put<{ data: { contact: SupportContact } }>('/admin/settings/support', input).then((r) => r.data.data.contact),
 }

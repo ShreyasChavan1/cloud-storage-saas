@@ -6,6 +6,7 @@ import { planRepository } from '../repositories/plan.repository'
 import { provisionUser } from './userProvisioning.service'
 import { reconciliationService, ReconciliationSummary } from './reconciliation.service'
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
+import { supportService } from './support.service'
 import { filesService } from './files.service'
 import { toAdminUserDTO, AdminUserDTO } from '../models/user.model'
 import { toSessionDTO, SessionDTO } from '../models/session.model'
@@ -18,6 +19,7 @@ import {
   UpdateUserQuotaInput,
   ListUsersQuery,
 } from '../validators/admin.validator'
+import { UpdateSupportContactInput } from '../validators/support.validator'
 
 // Shared by setUserStatus and deleteUser — both need "is this the last
 // admin account?" before proceeding, so a single admin can never suspend
@@ -238,5 +240,18 @@ export const adminService = {
   // with other services' repositories).
   reconcileSubscriptions(): Promise<ReconciliationSummary> {
     return reconciliationService.run()
+  },
+
+  // Thin pass-through, same shape as reconcileSubscriptions above — kept
+  // here rather than routing the frontend straight to support.service.ts
+  // so every adminController handler goes through adminService uniformly,
+  // and so this endpoint sits behind requireAdmin (applied to the whole
+  // admin router) without support.routes.ts needing its own admin check.
+  getSupportContact(): Promise<{ email: string; phone: string }> {
+    return supportService.getContact()
+  },
+
+  updateSupportContact(input: UpdateSupportContactInput): Promise<{ email: string; phone: string }> {
+    return supportService.updateContact(input)
   },
 }

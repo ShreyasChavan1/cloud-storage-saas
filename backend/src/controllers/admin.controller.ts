@@ -86,4 +86,14 @@ export const adminController = {
     const summary = await adminService.reconcileSubscriptions()
     return sendSuccess(res, summary)
   }),
+
+  getSupportContact: asyncHandler(async (_req: Request, res: Response) => {
+    const contact = await adminService.getSupportContact()
+    return sendSuccess(res, { contact })
+  }),
+
+  updateSupportContact: asyncHandler(async (req: Request, res: Response) => {
+    const contact = await adminService.updateSupportContact(req.body)
+    return sendSuccess(res, { contact })
+  }),
 }
