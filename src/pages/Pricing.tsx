@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Check } from 'lucide-react'
+import { Check, Phone, Mail } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ThemeToggle } from '@/components/ui/ThemeToggle'
 import { Button } from '@/components/ui/Button'
@@ -10,7 +10,21 @@ import { paymentsApi, BillingPlan } from '@/api/payments'
 import { loadRazorpayCheckout } from '@/lib/razorpay'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { userApi } from '@/api/user'
+import { supportApi, SupportContact } from '@/api/support'
 import { useEffect, useState } from 'react'
+
+// Presentation-only switch: true shows a simplified Free + "Contact us for
+// a custom plan" pricing page; false restores the original three-card
+// Razorpay autopay flow exactly as it was. Every autopay code path below
+// (startAutopay, Razorpay checkout, plan fetching, the paid-plan cards)
+// is left fully intact either way — flipping this back to false is the
+// entire revert, no re-implementation needed.
+const SHOW_CUSTOM_PLAN_CTA = true
+
+const customPlanMarketing = {
+  description: 'For teams and heavy users who need more than our standard plans.',
+  features: ['Storage sized to your needs', 'Dedicated support', 'Custom pricing and billing terms'],
+}
 
 const marketingByName: Record<string, { description: string; features: string[]; highlighted?: boolean }> = {
   basic: {
@@ -45,6 +59,12 @@ export default function Pricing() {
   const [loading, setLoading] = useState(true)
   const [catalogError, setCatalogError] = useState(false)
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null)
+  const [supportContact, setSupportContact] = useState<SupportContact | null>(null)
+
+  useEffect(() => {
+    if (!SHOW_CUSTOM_PLAN_CTA) return
+    supportApi.getContact().then(setSupportContact).catch(() => setSupportContact(null))
+  }, [])
 
   useEffect(() => {
     let mounted = true
@@ -127,18 +147,8 @@ export default function Pricing() {
         <h1 className="text-3xl font-bold sm:text-4xl">Simple pricing, generous storage</h1>
         <p className="mx-auto mt-3 max-w-lg text-ink-500 dark:text-ink-400">Start free. Upgrade whenever your files outgrow the plan you're on. Cancel any time.</p>
 
-        {catalogError && (
-          <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
-            We couldn't load the current paid plans from Razorpay. Please try again in a moment.
-          </div>
-        )}
-
-        {loading ? (
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-            {[1, 2, 3].map((i) => <div key={i} className="h-[430px] animate-pulse rounded-3xl border border-line bg-surface-0 dark:border-dark-border dark:bg-dark-surface" />)}
-          </div>
-        ) : (
-          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+        {SHOW_CUSTOM_PLAN_CTA ? (
+          <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-2">
             <div className="relative flex flex-col rounded-3xl border border-line bg-surface-0 p-7 text-left shadow-softer dark:border-dark-border dark:bg-dark-surface">
               <h3 className="font-display text-lg font-bold">{freePlan.name}</h3>
               <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{freePlan.description}</p>
@@ -155,38 +165,99 @@ export default function Pricing() {
               </Link>
             </div>
 
-            {paidPlans.map((plan) => {
-              const marketing = plan.marketing
-              return (
-                <div key={plan.id} className={cn('relative flex flex-col rounded-3xl border p-7 text-left transition-transform hover:-translate-y-1', marketing.highlighted ? 'border-brand-500 bg-surface-0 shadow-lift dark:bg-dark-surface' : 'border-line bg-surface-0 shadow-softer dark:border-dark-border dark:bg-dark-surface')}>
-                  {marketing.highlighted && <span className="absolute -top-3 left-7 rounded-full bg-brand-500 px-3 py-1 text-xs font-semibold text-white">Most popular</span>}
-                  <h3 className="font-display text-lg font-bold">{plan.name}</h3>
-                  <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{marketing.description}</p>
-                  <div className="mt-5 flex items-baseline gap-1">
-                    <span className="font-display text-4xl font-bold">₹{formatPrice(plan.price)}</span>
-                    <span className="text-sm text-ink-400">/{plan.interval === 1 ? 'mo' : `${plan.period}`}</span>
-                  </div>
-                  <p className="mt-1 text-xs text-ink-400">{plan.storageLimitGb}GB storage</p>
-                  <ul className="mt-6 flex flex-col gap-3">
-                    {marketing.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />{feature}</li>)}
-                  </ul>
-                  {user ? (
-                    user.plan?.toLowerCase() === plan.localPlanName.toLowerCase() ? (
-                      <Button className="mt-7 w-full" variant="secondary" disabled>Current plan</Button>
-                    ) : (
-                      <Button className="mt-7 w-full" loading={loadingPlan === plan.id} onClick={() => startAutopay(plan)}>
-                        Enable autopay
-                      </Button>
-                    )
-                  ) : (
-                    <Link to="/register" className="mt-7">
-                      <Button variant={marketing.highlighted ? 'primary' : 'secondary'} className="w-full">Choose {plan.name}</Button>
-                    </Link>
-                  )}
-                </div>
-              )
-            })}
+            <div className="relative flex flex-col rounded-3xl border border-brand-500 bg-surface-0 p-7 text-left shadow-lift dark:bg-dark-surface">
+              <span className="absolute -top-3 left-7 rounded-full bg-brand-500 px-3 py-1 text-xs font-semibold text-white">Most popular</span>
+              <h3 className="font-display text-lg font-bold">Custom</h3>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{customPlanMarketing.description}</p>
+              <div className="mt-5 flex items-baseline gap-1">
+                <span className="font-display text-2xl font-bold">Custom pricing</span>
+              </div>
+              <p className="mt-1 text-xs text-ink-400">Tell us what you need and we'll work out a plan.</p>
+              <ul className="mt-6 flex flex-col gap-3">
+                {customPlanMarketing.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />{feature}</li>)}
+              </ul>
+              <div className="mt-7 flex flex-col gap-2">
+                <a
+                  href={supportContact ? `tel:${supportContact.phone}` : undefined}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl border border-line bg-surface-0 text-sm font-medium text-ink-900 transition-all hover:bg-surface-50 dark:border-dark-border dark:bg-dark-surface2 dark:text-white dark:hover:bg-dark-surface"
+                >
+                  <Phone className="h-4 w-4" />
+                  Call us
+                </a>
+                <a
+                  href={supportContact ? `mailto:${supportContact.email}?subject=${encodeURIComponent('Custom plan inquiry')}` : undefined}
+                  className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-xl bg-accent-500 text-sm font-medium text-white shadow-lift transition-all hover:bg-accent-600"
+                >
+                  <Mail className="h-4 w-4" />
+                  Email us
+                </a>
+              </div>
+            </div>
           </div>
+        ) : (
+          <>
+            {catalogError && (
+              <div className="mx-auto mt-8 max-w-2xl rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-300">
+                We couldn't load the current paid plans from Razorpay. Please try again in a moment.
+              </div>
+            )}
+
+            {loading ? (
+              <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+                {[1, 2, 3].map((i) => <div key={i} className="h-[430px] animate-pulse rounded-3xl border border-line bg-surface-0 dark:border-dark-border dark:bg-dark-surface" />)}
+              </div>
+            ) : (
+              <div className="mt-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+                <div className="relative flex flex-col rounded-3xl border border-line bg-surface-0 p-7 text-left shadow-softer dark:border-dark-border dark:bg-dark-surface">
+                  <h3 className="font-display text-lg font-bold">{freePlan.name}</h3>
+                  <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{freePlan.description}</p>
+                  <div className="mt-5 flex items-baseline gap-1">
+                    <span className="font-display text-4xl font-bold">₹{freePlan.price.replace('.00', '')}</span>
+                    <span className="text-sm text-ink-400">/mo</span>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-400">{freePlan.storageLimitGb}GB storage</p>
+                  <ul className="mt-6 flex flex-col gap-3">
+                    {freePlan.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />{feature}</li>)}
+                  </ul>
+                  <Link to={user ? '/dashboard' : '/register'} className="mt-7">
+                    <Button variant="secondary" className="w-full">{user ? 'Current plan' : 'Start for free'}</Button>
+                  </Link>
+                </div>
+
+                {paidPlans.map((plan) => {
+                  const marketing = plan.marketing
+                  return (
+                    <div key={plan.id} className={cn('relative flex flex-col rounded-3xl border p-7 text-left transition-transform hover:-translate-y-1', marketing.highlighted ? 'border-brand-500 bg-surface-0 shadow-lift dark:bg-dark-surface' : 'border-line bg-surface-0 shadow-softer dark:border-dark-border dark:bg-dark-surface')}>
+                      {marketing.highlighted && <span className="absolute -top-3 left-7 rounded-full bg-brand-500 px-3 py-1 text-xs font-semibold text-white">Most popular</span>}
+                      <h3 className="font-display text-lg font-bold">{plan.name}</h3>
+                      <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">{marketing.description}</p>
+                      <div className="mt-5 flex items-baseline gap-1">
+                        <span className="font-display text-4xl font-bold">₹{formatPrice(plan.price)}</span>
+                        <span className="text-sm text-ink-400">/{plan.interval === 1 ? 'mo' : `${plan.period}`}</span>
+                      </div>
+                      <p className="mt-1 text-xs text-ink-400">{plan.storageLimitGb}GB storage</p>
+                      <ul className="mt-6 flex flex-col gap-3">
+                        {marketing.features.map((feature) => <li key={feature} className="flex items-start gap-2 text-sm text-ink-700 dark:text-ink-300"><Check className="mt-0.5 h-4 w-4 shrink-0 text-brand-500" />{feature}</li>)}
+                      </ul>
+                      {user ? (
+                        user.plan?.toLowerCase() === plan.localPlanName.toLowerCase() ? (
+                          <Button className="mt-7 w-full" variant="secondary" disabled>Current plan</Button>
+                        ) : (
+                          <Button className="mt-7 w-full" loading={loadingPlan === plan.id} onClick={() => startAutopay(plan)}>
+                            Enable autopay
+                          </Button>
+                        )
+                      ) : (
+                        <Link to="/register" className="mt-7">
+                          <Button variant={marketing.highlighted ? 'primary' : 'secondary'} className="w-full">Choose {plan.name}</Button>
+                        </Link>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </>
         )}
       </main>
     </div>

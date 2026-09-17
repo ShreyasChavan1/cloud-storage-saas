@@ -3,11 +3,13 @@ import { useSearchParams } from 'react-router-dom'
 import { LayoutGrid, List, Star, Trash2, Share2, FolderPlus, ChevronRight, AlertCircle } from 'lucide-react'
 import { EntryCard } from '@/components/files/EntryCard'
 import { EntryRow } from '@/components/files/EntryRow'
+import { TrashRow } from '@/components/files/TrashRow'
 import { UploadDropzone } from '@/components/files/UploadDropzone'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
 import { useCreateFolder } from '@/hooks/useFileMutations'
+import { useTrash, useRestoreTrashItem, useDeleteTrashItemForever, useEmptyTrash } from '@/hooks/useTrash'
 import { useQuery } from '@tanstack/react-query'
 import { filesApi, FileEntry } from '@/api/files'
 import { useDropToMove } from '@/hooks/useDropToMove'
@@ -20,7 +22,6 @@ import { PreviewModal } from '@/components/files/PreviewModal'
 
 const unsupportedViews: Record<string, { label: string; icon: typeof Star; note: string }> = {
   shared: { label: 'Shared with you', icon: Share2, note: "Sharing isn't wired up to the backend yet." },
-  trash: { label: 'Trash', icon: Trash2, note: "Trash isn't wired up to the backend yet — deleted items are gone for now." },
 }
 
 function breadcrumbSegments(path: string | undefined) {
@@ -54,6 +55,88 @@ function BreadcrumbButton({
     >
       {label}
     </button>
+  )
+}
+
+function TrashView() {
+  const { data: items, isLoading, isError, refetch } = useTrash()
+  const restore = useRestoreTrashItem()
+  const deleteForever = useDeleteTrashItemForever()
+  const emptyTrash = useEmptyTrash()
+  const { showToast } = useToast()
+  const [pendingId, setPendingId] = useState<string | null>(null)
+
+  const handleRestore = (id: string, name: string) => {
+    setPendingId(id)
+    restore.mutate(id, {
+      onSuccess: () => showToast(`Restored "${name}".`),
+      onError: (err) => showToast(getErrorMessage(err, 'Could not restore item.'), 'error'),
+      onSettled: () => setPendingId(null),
+    })
+  }
+
+  const handleDeleteForever = (id: string, name: string) => {
+    if (!window.confirm(`Permanently delete "${name}"? This cannot be undone.`)) return
+    setPendingId(id)
+    deleteForever.mutate(id, {
+      onSuccess: () => showToast(`Deleted "${name}" permanently.`),
+      onError: (err) => showToast(getErrorMessage(err, 'Could not delete item.'), 'error'),
+      onSettled: () => setPendingId(null),
+    })
+  }
+
+  const handleEmptyTrash = () => {
+    if (!window.confirm('Empty trash? Everything in it will be permanently deleted. This cannot be undone.')) return
+    emptyTrash.mutate(undefined, {
+      onSuccess: () => showToast('Trash emptied.'),
+      onError: (err) => showToast(getErrorMessage(err, 'Could not empty trash.'), 'error'),
+    })
+  }
+
+  return (
+    <div className="mx-auto max-w-7xl animate-fade-up">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Trash2 className="h-5 w-5 text-ink-400" />
+          <h1 className="text-2xl font-bold">Trash</h1>
+        </div>
+        {!!items?.length && (
+          <Button variant="secondary" size="sm" onClick={handleEmptyTrash} disabled={emptyTrash.isPending}>
+            Empty trash
+          </Button>
+        )}
+      </div>
+      <p className="mt-1 text-sm text-ink-400">Items are recoverable here until they're permanently deleted.</p>
+
+      {isError ? (
+        <div className="mt-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-line py-20 text-center dark:border-dark-border">
+          <AlertCircle className="h-10 w-10 text-ink-300" />
+          <p className="mt-3 max-w-sm text-sm text-ink-400">Could not load trash.</p>
+          <Button variant="secondary" size="sm" className="mt-4" onClick={() => refetch()}>Try again</Button>
+        </div>
+      ) : isLoading ? (
+        <div className="mt-6 flex flex-col gap-2">
+          {[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-xl border border-line bg-surface-0 dark:border-dark-border dark:bg-dark-surface" />)}
+        </div>
+      ) : !items?.length ? (
+        <div className="mt-10 flex flex-col items-center justify-center rounded-2xl border border-dashed border-line py-20 text-center dark:border-dark-border">
+          <Trash2 className="h-10 w-10 text-ink-300" />
+          <p className="mt-3 max-w-sm text-sm text-ink-400">Trash is empty.</p>
+        </div>
+      ) : (
+        <div className="mt-6 flex flex-col gap-1">
+          {items.map((item) => (
+            <TrashRow
+              key={item.id}
+              item={item}
+              busy={pendingId === item.id}
+              onRestore={() => handleRestore(item.id, item.name)}
+              onDeleteForever={() => handleDeleteForever(item.id, item.name)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -115,8 +198,12 @@ export default function Files() {
     })
   }
 
+  if (view === 'trash') {
+    return <TrashView />
+  }
+
   if (view !== 'all' && view !== 'favorites') {
-    const info = unsupportedViews[view] ?? unsupportedViews.trash
+    const info = unsupportedViews[view] ?? unsupportedViews.shared
     return (
       <div className="mx-auto max-w-7xl animate-fade-up">
         <div className="flex items-center gap-2">

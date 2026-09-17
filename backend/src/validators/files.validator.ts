@@ -24,6 +24,12 @@ export const deleteFileSchema = z.object({
   }),
 })
 
+export const trashItemSchema = z.object({
+  params: z.object({
+    id: z.string().min(1, 'id is required'),
+  }),
+})
+
 export const renameFileSchema = z.object({
   body: z.object({
     path: z.string().min(1, 'path is required'),

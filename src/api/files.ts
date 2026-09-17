@@ -95,3 +95,19 @@ export const filesApi = {
   stats: () => api.get<{ data: StorageStats }>('/files/stats').then((r) => r.data.data),
 }
 export const versionsApi={list:(path:string)=>api.get('/files/versions',{params:{path}}).then(r=>r.data.data),restore:(path:string,revision:string)=>api.post('/files/versions/restore',{path,revision}).then(r=>r.data.data.entry)}
+
+export interface TrashEntry {
+  id: string
+  name: string
+  originalLocation: string
+  deletedAt: string
+  type: 'file' | 'folder'
+  size: number
+}
+
+export const trashApi = {
+  list: () => api.get<{ data: { items: TrashEntry[] } }>('/files/trash').then((r) => r.data.data.items),
+  restore: (id: string) => api.post(`/files/trash/${encodeURIComponent(id)}/restore`).then(() => undefined),
+  deleteForever: (id: string) => api.delete(`/files/trash/${encodeURIComponent(id)}`).then(() => undefined),
+  empty: () => api.delete('/files/trash').then(() => undefined),
+}

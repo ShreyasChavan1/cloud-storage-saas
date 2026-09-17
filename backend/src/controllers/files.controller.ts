@@ -67,6 +67,26 @@ export const filesController = {
     return sendSuccess(res, { deleted: true })
   }),
 
+  trash: asyncHandler(async (req: Request, res: Response) => {
+    const items = await filesService.trash(req.user!.sub)
+    return sendSuccess(res, { items })
+  }),
+
+  restoreTrashItem: asyncHandler(async (req: Request, res: Response) => {
+    await filesService.restoreFromTrash(req.user!.sub, req.params.id)
+    return sendSuccess(res, { restored: true })
+  }),
+
+  deleteTrashItem: asyncHandler(async (req: Request, res: Response) => {
+    await filesService.deleteFromTrash(req.user!.sub, req.params.id)
+    return sendSuccess(res, { deleted: true })
+  }),
+
+  emptyTrash: asyncHandler(async (req: Request, res: Response) => {
+    await filesService.emptyTrash(req.user!.sub)
+    return sendSuccess(res, { emptied: true })
+  }),
+
   rename: asyncHandler(async (req: Request, res: Response) => {
     const entry = await filesService.rename(req.user!.sub, req.body.path, req.body.newName)
     return sendSuccess(res, { entry })

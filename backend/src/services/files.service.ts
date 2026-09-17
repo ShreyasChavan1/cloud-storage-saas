@@ -129,6 +129,48 @@ export const filesService = {
     }
   },
 
+  // Nextcloud's Deleted-files app already moved this into trash the moment
+  // `delete` above ran (that's default Nextcloud behavior, nothing this
+  // backend does) — these four just read/manage what's sitting there.
+  async trash(userId: string) {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      return await webDavService.listTrash(nextcloudUsername, davPassword)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async restoreFromTrash(userId: string, id: string): Promise<void> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      await webDavService.restoreTrashItem(nextcloudUsername, davPassword, id)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async deleteFromTrash(userId: string, id: string): Promise<void> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      await webDavService.deleteTrashItem(nextcloudUsername, davPassword, id)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async emptyTrash(userId: string): Promise<void> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      const items = await webDavService.listTrash(nextcloudUsername, davPassword)
+      for (const item of items) {
+        await webDavService.deleteTrashItem(nextcloudUsername, davPassword, item.id)
+      }
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
   async rename(userId: string, rawPath: string, newName: string): Promise<FileEntryDTO> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     const path = sanitizeDavPath(rawPath)

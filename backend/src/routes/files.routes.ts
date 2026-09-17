@@ -14,6 +14,7 @@ import {
   favoriteFileSchema,
   versionsSchema,
   restoreVersionSchema,
+  trashItemSchema,
 } from '../validators/files.validator'
 
 const router = Router()
@@ -23,6 +24,10 @@ router.use(requireAuth)
 router.get('/', validate(listFilesSchema), filesController.list)
 router.post('/upload', validate(uploadFileSchema), uploadMiddleware, filesController.upload)
 router.delete('/', validate(deleteFileSchema), filesController.delete)
+router.get('/trash', filesController.trash)
+router.post('/trash/:id/restore', validate(trashItemSchema), filesController.restoreTrashItem)
+router.delete('/trash/:id', validate(trashItemSchema), filesController.deleteTrashItem)
+router.delete('/trash', filesController.emptyTrash)
 router.patch('/rename', validate(renameFileSchema), filesController.rename)
 router.post('/folder', validate(createFolderSchema), filesController.createFolder)
 router.post('/move', validate(moveFileSchema), filesController.move)
