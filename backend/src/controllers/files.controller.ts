@@ -6,12 +6,20 @@ import { sendSuccess } from '../utils/response'
 import { ApiError } from '../utils/ApiError'
 
 // Buffered in memory rather than streamed to disk first — simplest correct
-// option for now. Revisit (disk-temp storage, or a streaming multipart
-// parser) if this backend ever needs to handle very large uploads; a 100MB
-// cap here bounds the worst case in the meantime.
+// option, but it means the WHOLE file sits in this Node process's RAM for
+// the duration of the upload. 2GB was chosen to comfortably clear real
+// large-file use (256MB+ videos etc.) while still being a bounded cap, not
+// unlimited — an unbounded limit here would let a single upload (or a
+// handful of concurrent ones) exhaust the server's memory and take the
+// whole backend down for every user, not just the uploader. If this
+// process runs on a host with limited RAM (many Railway plans included),
+// raising this further is a real availability risk, not just a number to
+// bump — the proper fix at that point is switching to disk-backed
+// multer.diskStorage() (or a true streaming multipart parser piped
+// straight into the WebDAV PUT) rather than raising this cap indefinitely.
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
 })
 
 export const uploadMiddleware = upload.single('file')
