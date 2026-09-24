@@ -17,7 +17,7 @@ The machine you install on needs network access to both the NVR (on the LAN) and
 3. Click **Yes** on the Windows permission prompt that appears — a black window opens and installs everything for you.
 4. When it asks, paste the one-time enrollment code from Nimbus and press Enter.
 
-That's it — no PowerShell knowledge, no execution-policy settings, no API URL to enter, and no need to `cd` into any folder yourself. The installer installs Node.js LTS and FFmpeg automatically if needed (via `winget` — if that's missing, install "App Installer" from the Microsoft Store first), enrolls the gateway, and registers a scheduled task so it starts automatically at boot and restarts itself if it ever crashes. No Docker is required.
+That's it — no PowerShell knowledge, no execution-policy settings, no API URL to enter, and no need to `cd` into any folder yourself. The installer installs Node.js LTS and a machine-local FFmpeg copy automatically if needed (via `winget` — if that's missing, install "App Installer" from the Microsoft Store first). It copies FFmpeg into the Nimbus installation directory and configures the gateway to use that exact executable, so the SYSTEM scheduled task does not depend on the installing user's PATH. It then enrolls the gateway and registers a scheduled task so it starts automatically at boot and restarts itself if it ever crashes. No Docker is required.
 
 (If you prefer running it from PowerShell directly instead of double-clicking, that still works: `Set-ExecutionPolicy Bypass -Scope Process -Force` then `.\install.ps1`, as Administrator.)
 
@@ -61,3 +61,13 @@ NVR credentials and camera configuration are entered in Nimbus (**Settings → C
 - **Linux**: run `sudo ./uninstall.sh`.
 
 Both remove the scheduled task/service and the local install + spool directories, including any recordings still queued locally that hadn't finished uploading yet.
+
+
+### Recording compatibility
+
+The gateway records using stream copy to preserve the camera's original codec, then remuxes each completed MP4 with FFmpeg using `+faststart` and normalized timestamps before upload. This keeps recording behavior unchanged while making the MP4 container suitable for browser playback. FFmpeg is installed under the gateway directory so the SYSTEM scheduled task does not depend on a user's PATH.
+
+
+### Windows background service
+
+The Windows installer installs Nimbus NVR Gateway as the `Nimbus NVR Gateway` Windows service. It starts automatically with Windows and runs in the background. Users can stop/start it from **Start Menu > Nimbus > Stop/Start Nimbus Gateway** or from `services.msc`.

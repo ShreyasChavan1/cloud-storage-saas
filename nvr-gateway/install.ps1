@@ -6,8 +6,20 @@ $SpoolDir = Join-Path $env:ProgramData "Nimbus\NVR Gateway\spool"
 # If this installer is being used to re-enroll an existing gateway, stop the
 # old task and clear only its persistent enrollment token. This prevents an
 # old/revoked token from winning over the new one-time enrollment code.
+# Stop/remove the previous Task Scheduler deployment if present.
 if (Get-ScheduledTask -TaskName "Nimbus NVR Gateway" -ErrorAction SilentlyContinue) {
   Stop-ScheduledTask -TaskName "Nimbus NVR Gateway" -ErrorAction SilentlyContinue
+  Unregister-ScheduledTask -TaskName "Nimbus NVR Gateway" -Confirm:$false -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+}
+# Stop/remove an older Windows service deployment before replacing its files.
+$oldService = Get-Service -Name "Nimbus NVR Gateway" -ErrorAction SilentlyContinue
+if ($oldService) {
+  Stop-Service -Name "Nimbus NVR Gateway" -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+  Push-Location $InstallDir
+  if (Test-Path "service-install.cjs") { node service-install.cjs uninstall 2>$null }
+  Pop-Location
   Start-Sleep -Seconds 1
 }
 New-Item -ItemType Directory -Force -Path $InstallDir, $SpoolDir | Out-Null
@@ -17,13 +29,60 @@ function Ensure-WingetPackage($Id, $Name) {
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
     throw "Windows App Installer (winget) is required. Install/update 'App Installer' from Microsoft Store, then run this installer again."
   }
-  winget install --id $Id --exact --accept-package-agreements --accept-source-agreements --silent
+  winget install --id $Id --exact --accept-package-agreements --accept-source-agreements --silent --scope machine
   if ($LASTEXITCODE -ne 0) { throw "Could not install $Name." }
   $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path", "User")
 }
 
-if (-not (Get-Command node -ErrorAction SilentlyContinue)) { Ensure-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS" }
-if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Ensure-WingetPackage "Gyan.FFmpeg" "FFmpeg" }
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  Ensure-WingetPackage "OpenJS.NodeJS.LTS" "Node.js LTS"
+}
+
+$FfmpegDir = Join-Path $InstallDir "ffmpeg"
+New-Item -ItemType Directory -Force -Path $FfmpegDir | Out-Null
+
+function Find-FfmpegBinary {
+  $roots = @(
+    (Join-Path $env:ProgramFiles "WinGet\Packages"),
+    (Join-Path $env:ProgramFiles "ffmpeg"),
+    (Join-Path $env:ProgramData "chocolatey\bin")
+  ) | Where-Object { $_ -and (Test-Path $_) }
+
+  foreach ($root in $roots) {
+    $hit = Get-ChildItem -Path $root -Filter "ffmpeg.exe" -File -Recurse -ErrorAction SilentlyContinue |
+      Where-Object { $_.FullName -notmatch "[\\/]Links[\\/]" } |
+      Select-Object -First 1
+    if ($hit) { return $hit }
+  }
+
+  return $null
+}
+
+$FfmpegBinary = Find-FfmpegBinary
+if (-not $FfmpegBinary) {
+  Ensure-WingetPackage "Gyan.FFmpeg" "FFmpeg"
+  $FfmpegBinary = Find-FfmpegBinary
+}
+
+if (-not $FfmpegBinary) {
+  throw "FFmpeg was installed but ffmpeg.exe could not be located."
+}
+
+# Copy the complete FFmpeg bin directory, not only ffmpeg.exe. Gyan builds can
+# ship supporting DLLs beside the executable. Keeping a self-contained copy in
+# ProgramData makes it visible to SYSTEM and independent of the installing user's PATH.
+$FfmpegSourceDir = $FfmpegBinary.Directory.FullName
+if ($FfmpegBinary.Name -ne "ffmpeg.exe") { throw "Unexpected FFmpeg binary: $($FfmpegBinary.FullName)" }
+Get-ChildItem -Path $FfmpegSourceDir -File | ForEach-Object {
+  Copy-Item $_.FullName -Destination (Join-Path $FfmpegDir $_.Name) -Force
+}
+$FfmpegPath = Join-Path $FfmpegDir "ffmpeg.exe"
+if (-not (Test-Path $FfmpegPath)) { throw "FFmpeg copy failed: $FfmpegPath was not created." }
+if ((Get-Item $FfmpegPath).Length -lt 100000) { throw "FFmpeg binary looks invalid or incomplete: $FfmpegPath" }
+
+# Verify the copied binary actually starts before we register the long-running task.
+$ffmpegCheck = Start-Process -FilePath $FfmpegPath -ArgumentList "-version" -Wait -PassThru -NoNewWindow
+if ($ffmpegCheck.ExitCode -ne 0) { throw "The installed FFmpeg binary failed its startup check." }
 
 # Defaults to the current Nimbus deployment so a customer can just press
 # Enter — but stays overridable. A hardcoded, non-overridable URL here would
@@ -58,20 +117,34 @@ Pop-Location
 NIMBUS_API_URL=$ApiUrl
 NIMBUS_ENROLLMENT_CODE=$Code
 SPOOL_DIR=$SpoolDir
+NIMBUS_GATEWAY_DIR=$InstallDir
+FFMPEG_PATH=$FfmpegPath
 "@ | Set-Content -Path (Join-Path $InstallDir ".env") -Encoding ASCII
 
-$Action = New-ScheduledTaskAction -Execute (Join-Path (Split-Path (Get-Command node).Source) "node.exe") -Argument "`"$InstallDir\dist\index.js`"" -WorkingDirectory $InstallDir
-$Trigger = New-ScheduledTaskTrigger -AtStartup
-$Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccount -RunLevel Highest
-# Task Scheduler's default ExecutionTimeLimit is 3 days — without overriding
-# it to unlimited, Windows would silently kill this long-running gateway
-# process every 72 hours. RestartCount/RestartInterval is the closest
-# equivalent here to systemd's Restart=always on the Linux side (not truly
-# infinite — Task Scheduler caps it — but 999 retries at 1-minute spacing
-# comfortably outlasts any transient network blip or NVR reboot).
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-Register-ScheduledTask -TaskName "Nimbus NVR Gateway" -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
-Start-ScheduledTask -TaskName "Nimbus NVR Gateway"
+$NodePath = Join-Path $env:ProgramFiles "nodejs\node.exe"
+if (-not (Test-Path $NodePath)) {
+  $NodeCommand = Get-Command node -ErrorAction SilentlyContinue
+  if ($NodeCommand) { $NodePath = $NodeCommand.Source }
+}
+if (-not (Test-Path $NodePath)) { throw "Node.js was installed but node.exe could not be located." }
+# Install as a real Windows service. This gives the customer normal Start/Stop
+# controls in services.msc and keeps the gateway running in the background
+# without exposing Task Scheduler or a console window.
+Push-Location $InstallDir
+node service-install.cjs install
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Could not install the Nimbus NVR Gateway Windows service." }
+Pop-Location
+
+# Create simple Start/Stop shortcuts in the Start Menu for non-technical users.
+$StartMenuDir = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\Nimbus"
+New-Item -ItemType Directory -Force -Path $StartMenuDir | Out-Null
+$WshShell = New-Object -ComObject WScript.Shell
+foreach ($item in @(@{Name='Start Nimbus Gateway'; Target=(Join-Path $InstallDir 'start-gateway.bat')}, @{Name='Stop Nimbus Gateway'; Target=(Join-Path $InstallDir 'stop-gateway.bat')})) {
+  $shortcut = $WshShell.CreateShortcut((Join-Path $StartMenuDir ($item.Name + '.lnk')))
+  $shortcut.TargetPath = $item.Target
+  $shortcut.WorkingDirectory = $InstallDir
+  $shortcut.Save()
+}
 
 # Give the gateway a short window to exchange the one-time code for its
 # persistent token. This turns installation into a real enrollment check
@@ -94,7 +167,8 @@ if ($enrolled) {
     (Get-Content $envPath) | Where-Object { $_ -notmatch '^NIMBUS_ENROLLMENT_CODE=' } | Set-Content -Path $envPath -Encoding ASCII
   }
   Write-Host "Nimbus NVR Gateway installed and enrolled successfully." -ForegroundColor Green
-  Write-Host "NVR configuration is managed from Nimbus. The gateway will start automatically with Windows." -ForegroundColor Green
+  Write-Host "NVR configuration is managed from Nimbus. The gateway runs automatically in the background as a Windows service." -ForegroundColor Green
+  Write-Host "Start/Stop controls were added to Start Menu > Nimbus." -ForegroundColor Green
 } else {
   Write-Host "Nimbus NVR Gateway was installed, but enrollment was not confirmed." -ForegroundColor Yellow
   Write-Host "Create a fresh enrollment code in Nimbus and run install.bat again." -ForegroundColor Yellow

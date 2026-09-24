@@ -1,7 +1,7 @@
 import 'dotenv/config'
 import { spawn, ChildProcess } from 'node:child_process'
-import { createReadStream } from 'node:fs'
-import { mkdir, readdir, stat, unlink, readFile, writeFile } from 'node:fs/promises'
+import { createReadStream, existsSync, renameSync } from 'node:fs'
+import { mkdir, readdir, stat, unlink, readFile, writeFile, rename } from 'node:fs/promises'
 import { join, extname } from 'node:path'
 import { hostname } from 'node:os'
 import axios from 'axios'
@@ -12,6 +12,13 @@ type GatewayConfig = {
   deviceId: string; deviceName: string; configured: boolean
   nvrHost: string | null; nvrUsername: string | null; nvrPassword: string | null
   cameras: Camera[]; segmentSeconds: number; uploadPollSeconds: number
+}
+const ffmpegPath =
+  process.env.FFMPEG_PATH ||
+  join(process.env.NIMBUS_GATEWAY_DIR ?? process.cwd(), 'ffmpeg', 'ffmpeg.exe')
+
+if (!existsSync(ffmpegPath)) {
+  throw new Error(`FFmpeg not found at: ${ffmpegPath}. The Nimbus installer must install FFmpeg in the gateway directory.`)
 }
 
 const apiUrl = (process.env.NIMBUS_API_URL ?? '').replace(/\/+$/, '')
@@ -54,7 +61,7 @@ function startCamera(camera: Camera) {
   void mkdir(outDir, { recursive: true })
   const output = join(outDir, `${safePart(camera.name)}-%Y%m%d-%H%M%S.mp4`)
   const args = ['-hide_banner', '-loglevel', 'warning', '-rtsp_transport', 'tcp', '-timeout', '15000000', '-fflags', '+genpts', '-i', camera.rtspUrl, '-map', '0', '-c', 'copy', '-f', 'segment', '-segment_time', String(config.segmentSeconds), '-reset_timestamps', '1', '-strftime', '1', '-segment_format', 'mp4', output]
-  const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
+  const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
   children.set(camera.name, child)
   child.stderr?.on('data', data => console.error(`[${camera.name}] ${String(data).trim()}`))
   child.on('exit', (code, signal) => {
@@ -74,12 +81,39 @@ function parseRecordedAt(filename: string) {
   const date = new Date(`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}T${t.slice(0,2)}:${t.slice(2,4)}:${t.slice(4,6)}.000Z`)
   return Number.isNaN(date.getTime()) ? undefined : date.toISOString()
 }
+async function repairMp4(file: string): Promise<string> {
+  const repaired = `${file}.repair.mp4`
+  const args = [
+    '-hide_banner', '-loglevel', 'error',
+    '-i', file,
+    '-map', '0',
+    '-c', 'copy',
+    '-movflags', '+faststart',
+    '-avoid_negative_ts', 'make_zero',
+    '-y', repaired,
+  ]
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(ffmpegPath, args, { stdio: ['ignore', 'ignore', 'pipe'] })
+    let stderr = ''
+    child.stderr?.on('data', data => { stderr += String(data) })
+    child.on('error', reject)
+    child.on('exit', code => {
+      if (code === 0) resolve()
+      else reject(new Error(`FFmpeg MP4 remux failed (code=${code}): ${stderr.trim()}`))
+    })
+  })
+  await unlink(file)
+  await rename(repaired, file)
+  return file
+}
+
 async function uploadFile(camera: Camera, file: string) {
   if (uploading.has(file)) return
   uploading.add(file)
   try {
+    const playableFile = await repairMp4(file)
     const form = new FormData()
-    form.append('file', createReadStream(file), { filename: file.split(/[\\/]/).pop(), contentType: 'video/mp4' })
+    form.append('file', createReadStream(playableFile), { filename: playableFile.split(/[\\/]/).pop(), contentType: 'video/mp4' })
     const recordedAt = parseRecordedAt(file.split(/[\\/]/).pop() ?? '')
     if (recordedAt) form.append('recordedAt', recordedAt)
     form.append('camera', camera.name)
