@@ -53,7 +53,7 @@ function startCamera(camera: Camera) {
   const outDir = cameraDir(camera)
   void mkdir(outDir, { recursive: true })
   const output = join(outDir, `${safePart(camera.name)}-%Y%m%d-%H%M%S.mp4`)
-  const args = ['-hide_banner', '-loglevel', 'warning', '-rtsp_transport', 'tcp', '-rw_timeout', '15000000', '-i', camera.rtspUrl, '-map', '0', '-c', 'copy', '-f', 'segment', '-segment_time', String(config.segmentSeconds), '-reset_timestamps', '1', '-strftime', '1', '-segment_format', 'mp4', output]
+  const args = ['-hide_banner', '-loglevel', 'warning', '-rtsp_transport', 'tcp', '-timeout', '15000000', '-fflags', '+genpts', '-i', camera.rtspUrl, '-map', '0', '-c', 'copy', '-f', 'segment', '-segment_time', String(config.segmentSeconds), '-reset_timestamps', '1', '-strftime', '1', '-segment_format', 'mp4', output]
   const child = spawn('ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
   children.set(camera.name, child)
   child.stderr?.on('data', data => console.error(`[${camera.name}] ${String(data).trim()}`))

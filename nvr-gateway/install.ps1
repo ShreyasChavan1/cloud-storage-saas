@@ -2,7 +2,16 @@
 $ErrorActionPreference = "Stop"
 $InstallDir = Join-Path $env:ProgramData "Nimbus\NVR Gateway"
 $SpoolDir = Join-Path $env:ProgramData "Nimbus\NVR Gateway\spool"
+
+# If this installer is being used to re-enroll an existing gateway, stop the
+# old task and clear only its persistent enrollment token. This prevents an
+# old/revoked token from winning over the new one-time enrollment code.
+if (Get-ScheduledTask -TaskName "Nimbus NVR Gateway" -ErrorAction SilentlyContinue) {
+  Stop-ScheduledTask -TaskName "Nimbus NVR Gateway" -ErrorAction SilentlyContinue
+  Start-Sleep -Seconds 1
+}
 New-Item -ItemType Directory -Force -Path $InstallDir, $SpoolDir | Out-Null
+Remove-Item (Join-Path $SpoolDir ".gateway-token") -Force -ErrorAction SilentlyContinue
 
 function Ensure-WingetPackage($Id, $Name) {
   if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
@@ -23,9 +32,8 @@ if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) { Ensure-WingetPack
 # this installer from Nimbus after that migration but before someone
 # remembers to update and re-package it.
 $DefaultApiUrl = "https://cloud-storage-saas-production.up.railway.app"
-$ApiUrlInput = Read-Host "Nimbus API URL [default: $DefaultApiUrl]"
-$ApiUrl = if ([string]::IsNullOrWhiteSpace($ApiUrlInput)) { $DefaultApiUrl } else { $ApiUrlInput }
-$Code = Read-Host "One-time Nimbus gateway enrollment code"
+$ApiUrl = if ([string]::IsNullOrWhiteSpace($env:NIMBUS_INSTALL_API_URL)) { $DefaultApiUrl } else { $env:NIMBUS_INSTALL_API_URL.TrimEnd('/') }
+$Code = Read-Host "Paste the one-time Nimbus gateway enrollment code and press Enter"
 if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "Nimbus API URL and enrollment code are required." }
 
 # NOTE: no trailing backslash after the wildcard here — "*\" matches
@@ -64,9 +72,30 @@ $Principal = New-ScheduledTaskPrincipal -UserId "SYSTEM" -LogonType ServiceAccou
 $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 999 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName "Nimbus NVR Gateway" -Action $Action -Trigger $Trigger -Principal $Principal -Settings $Settings -Force | Out-Null
 Start-ScheduledTask -TaskName "Nimbus NVR Gateway"
-Write-Host "Nimbus NVR Gateway installed and started." -ForegroundColor Green
-Write-Host "The gateway will fetch its NVR configuration automatically from Nimbus." -ForegroundColor Green
-Write-Host "It runs automatically at Windows startup. NVR configuration is managed from Nimbus." -ForegroundColor Green
-Write-Host ""
-Write-Host "To verify it actually enrolled, check: Task Scheduler > Task Scheduler Library > Nimbus NVR Gateway > History tab," -ForegroundColor Cyan
-Write-Host "or run 'node dist\index.js' manually from $InstallDir to see live output." -ForegroundColor Cyan
+
+# Give the gateway a short window to exchange the one-time code for its
+# persistent token. This turns installation into a real enrollment check
+# instead of reporting success merely because Task Scheduler accepted the task.
+$TokenFile = Join-Path $SpoolDir ".gateway-token"
+$enrolled = $false
+for ($i = 0; $i -lt 30; $i++) {
+  if (Test-Path $TokenFile) {
+    $token = (Get-Content $TokenFile -Raw -ErrorAction SilentlyContinue).Trim()
+    if (-not [string]::IsNullOrWhiteSpace($token)) { $enrolled = $true; break }
+  }
+  Start-Sleep -Seconds 2
+}
+
+if ($enrolled) {
+  # The enrollment code is single-use. Remove it after successful enrollment
+  # so the persistent gateway token is the only credential kept in .env.
+  $envPath = Join-Path $InstallDir ".env"
+  if (Test-Path $envPath) {
+    (Get-Content $envPath) | Where-Object { $_ -notmatch '^NIMBUS_ENROLLMENT_CODE=' } | Set-Content -Path $envPath -Encoding ASCII
+  }
+  Write-Host "Nimbus NVR Gateway installed and enrolled successfully." -ForegroundColor Green
+  Write-Host "NVR configuration is managed from Nimbus. The gateway will start automatically with Windows." -ForegroundColor Green
+} else {
+  Write-Host "Nimbus NVR Gateway was installed, but enrollment was not confirmed." -ForegroundColor Yellow
+  Write-Host "Create a fresh enrollment code in Nimbus and run install.bat again." -ForegroundColor Yellow
+}

@@ -4,10 +4,9 @@ A Docker-free local gateway for production NVR backup. It runs inside the custom
 
 ## Before you install
 
-You'll be asked for two things during setup — have them ready:
+You'll need one thing during setup:
 
-1. **The Nimbus API URL** — the backend's address. The installer suggests the current default; just press Enter to accept it, or paste a different one if your Nimbus deployment has moved.
-2. **A one-time gateway enrollment code** — generated in Nimbus under **Settings → CCTV → Create a gateway**. It's shown once, expires in 24 hours, and can only be used once. If it expires before you finish, just create a new one.
+1. **A one-time gateway enrollment code** — generated in Nimbus under **Settings → CCTV → Create a gateway**. Paste it into the installer and press Enter. The installer uses the current Nimbus API automatically.
 
 The machine you install on needs network access to both the NVR (on the LAN) and the Nimbus API URL above (typically over the internet) — it does not need any inbound ports opened.
 
@@ -16,9 +15,9 @@ The machine you install on needs network access to both the NVR (on the LAN) and
 1. Extract the downloaded zip anywhere (Desktop, Downloads, doesn't matter).
 2. Double-click **`install.bat`** inside the extracted folder.
 3. Click **Yes** on the Windows permission prompt that appears — a black window opens and installs everything for you.
-4. When it asks, paste in the Nimbus API URL (or just press Enter to accept the suggested default) and the one-time enrollment code from Nimbus.
+4. When it asks, paste the one-time enrollment code from Nimbus and press Enter.
 
-That's it — no PowerShell knowledge, no execution-policy settings, no need to `cd` into any folder yourself. The installer installs Node.js LTS and FFmpeg automatically if needed (via `winget` — if that's missing, install "App Installer" from the Microsoft Store first), enrolls the gateway, and registers a scheduled task so it starts automatically at boot and restarts itself if it ever crashes. No Docker is required.
+That's it — no PowerShell knowledge, no execution-policy settings, no API URL to enter, and no need to `cd` into any folder yourself. The installer installs Node.js LTS and FFmpeg automatically if needed (via `winget` — if that's missing, install "App Installer" from the Microsoft Store first), enrolls the gateway, and registers a scheduled task so it starts automatically at boot and restarts itself if it ever crashes. No Docker is required.
 
 (If you prefer running it from PowerShell directly instead of double-clicking, that still works: `Set-ExecutionPolicy Bypass -Scope Process -Force` then `.\install.ps1`, as Administrator.)
 
@@ -32,7 +31,7 @@ The installer installs Node.js, npm and FFmpeg, enrolls the gateway, and install
 
 ## Verifying it actually worked
 
-The installer finishing without an error only means the service/task was *set up* — it doesn't guarantee the gateway successfully reached Nimbus and enrolled. Always check the logs right after installing:
+The installer now waits briefly for the gateway token and reports whether enrollment was actually confirmed. If enrollment is confirmed, no manual log inspection is required for normal setup:
 
 - **Windows**: open Task Scheduler → Task Scheduler Library → "Nimbus NVR Gateway" → History tab. Or run `node dist\index.js` manually from the install folder (`%ProgramData%\Nimbus\NVR Gateway`) to see live output.
 - **Linux**: `sudo journalctl -u nimbus-nvr-gateway -f`
