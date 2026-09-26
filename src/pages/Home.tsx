@@ -21,7 +21,7 @@ const Home = () => {
         <div className="max-w-7xl mx-auto px-6 lg:px-8 h-20 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3">
             <img
-              src="/dalvi-vaultgrid-icon.png"
+              src="/dalvi-vaultgrid-logo.png"
               alt="DV Technologies"
               className="h-14 w-auto object-contain"
             />
@@ -691,7 +691,7 @@ const Home = () => {
                   </div>
 
                   <div className="text-white mt-1">
-                    YOUR_OWNER_EMAIL_HERE
+                    hrishikeshdalvi0504@gmail.com
                   </div>
                 </div>
 
@@ -701,7 +701,7 @@ const Home = () => {
                   </div>
 
                   <div className="text-white mt-1">
-                    YOUR_PHONE_NUMBER_HERE
+                    9168598659
                   </div>
                 </div>
               </div>
