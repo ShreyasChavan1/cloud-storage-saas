@@ -230,6 +230,7 @@ export function AdminUsersTable() {
         }
         confirmLabel={statusTarget?.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
         danger={statusTarget?.status === 'ACTIVE'}
+        loading={setStatus.isPending}
         onCancel={() => setStatusTarget(null)}
         onConfirm={handleConfirmStatus}
       />
@@ -240,6 +241,7 @@ export function AdminUsersTable() {
         message={`This permanently deletes ${deleteTarget?.email}'s account, including their Nextcloud storage account and all their files. This can't be undone.`}
         confirmLabel="Delete"
         danger
+        loading={deleteUser.isPending}
         onCancel={() => setDeleteTarget(null)}
         onConfirm={handleConfirmDelete}
       />

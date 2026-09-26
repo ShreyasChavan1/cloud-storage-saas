@@ -32,30 +32,41 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
   }
 
   const handleRename = (newName: string) => {
-    setRenaming(false)
     renameFile.mutate(
       { path: entry.path, newName },
       {
-        onError: (err) => showToast(getErrorMessage(err, 'Rename failed.'), 'error'),
+        onSuccess: () => setRenaming(false),
+        onError: (err) => {
+          showToast(getErrorMessage(err, 'Rename failed.'), 'error')
+          setRenaming(false)
+        },
       }
     )
   }
 
   const handleMove = (destination: string) => {
-    setMoving(false)
     moveFile.mutate(
       { from: entry.path, to: destination },
       {
-        onSuccess: () => showToast(`Moved "${entry.name}".`),
-        onError: (err) => showToast(getErrorMessage(err, 'Move failed.'), 'error'),
+        onSuccess: () => {
+          showToast(`Moved "${entry.name}".`)
+          setMoving(false)
+        },
+        onError: (err) => {
+          showToast(getErrorMessage(err, 'Move failed.'), 'error')
+          setMoving(false)
+        },
       }
     )
   }
 
   const handleDelete = () => {
-    setDeleting(false)
     deleteFile.mutate(entry.path, {
-      onError: (err) => showToast(getErrorMessage(err, 'Delete failed.'), 'error'),
+      onSuccess: () => setDeleting(false),
+      onError: (err) => {
+        showToast(getErrorMessage(err, 'Delete failed.'), 'error')
+        setDeleting(false)
+      },
     })
   }
 
@@ -97,6 +108,7 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
         label="New name"
         initialValue={entry.name}
         confirmLabel="Rename"
+        loading={renameFile.isPending}
         onCancel={() => setRenaming(false)}
         onConfirm={handleRename}
       />
@@ -107,6 +119,7 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
         label="Destination path (e.g. /Documents)"
         initialValue={entry.path}
         confirmLabel="Move"
+        loading={moveFile.isPending}
         onCancel={() => setMoving(false)}
         onConfirm={handleMove}
       />
@@ -120,6 +133,7 @@ export function FileMenu({ entry, currentPath }: { entry: FileEntry; currentPath
         message={entry.type === 'folder' ? 'This will delete the folder and everything inside it.' : 'This cannot be undone.'}
         confirmLabel="Delete"
         danger
+        loading={deleteFile.isPending}
         onCancel={() => setDeleting(false)}
         onConfirm={handleDelete}
       />

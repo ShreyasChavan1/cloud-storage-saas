@@ -23,6 +23,16 @@ export interface AdminOverview {
   activeSessions: number
 }
 
+// Separate from AdminOverview above — this one costs one storage-backend
+// call per provisioned account, so it's fetched on its own (see
+// useAdminStorageOverview's staleTime) rather than bundled into the cheap
+// counts overview loads on every dashboard visit.
+export interface AdminStorageOverview {
+  totalUsedBytes: number
+  provisionedUsers: number
+  failedUsers: number
+}
+
 export interface AdminPayment {
   id: string
   amount: string
@@ -71,6 +81,9 @@ export interface CreateUserInput {
 // backend/src/middleware/admin.middleware.ts).
 export const adminApi = {
   overview: () => api.get<{ data: AdminOverview }>('/admin/overview').then((r) => r.data.data),
+
+  storageOverview: () =>
+    api.get<{ data: AdminStorageOverview }>('/admin/storage-overview').then((r) => r.data.data),
 
   // Backs the "create user" dialog's plan dropdown. planRepository.findAll
   // already existed (Phase 3) but had no route until Phase 10 needed one

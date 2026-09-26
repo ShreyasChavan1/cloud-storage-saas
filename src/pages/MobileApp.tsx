@@ -7,7 +7,7 @@ import { useAuth } from '@/context/AuthContext'
 // Nextcloud's own official client — Nimbus's storage backend is a real
 // Nextcloud account under the hood (see backend/README.md), so the
 // official app works against it as-is. No Nimbus-specific app needed.
-const NEXTCLOUD_SERVER_URL = 'http://141.148.216.121'
+const NEXTCLOUD_SERVER_URL = 'https://cloud.dv-technologies.in'
 const IOS_APP_URL = 'https://apps.apple.com/app/nextcloud/id1125420102'
 const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=com.nextcloud.client'
 const FDROID_APP_URL = 'https://f-droid.org/packages/com.nextcloud.client/'
@@ -92,7 +92,7 @@ export default function MobileApp() {
         </div>
       </Card>
 
-      <Card className="border-amber-300 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/20">
+      {/* <Card className="border-amber-300 bg-amber-50 p-5 dark:border-amber-900/50 dark:bg-amber-950/20">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
           <div className="text-sm text-amber-900 dark:text-amber-200">
@@ -106,7 +106,7 @@ export default function MobileApp() {
             </p>
           </div>
         </div>
-      </Card>
+      </Card> */}
     </div>
   )
 }

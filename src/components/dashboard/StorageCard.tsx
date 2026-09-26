@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Sparkles, AlertCircle, Files } from 'lucide-react'
+import { Sparkles, AlertCircle, Files, Loader2 } from 'lucide-react'
 import { Card } from '@/components/ui/Card'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { StorageRing } from '@/components/ui/StorageRing'
@@ -8,7 +8,7 @@ import { useStorageStats } from '@/hooks/useStorageStats'
 import { formatBytes } from '@/lib/formatBytes'
 
 export function StorageCard() {
-  const { data: quota, isLoading, isError } = useQuota()
+  const { data: quota, isLoading, isFetching, isError } = useQuota()
   const { data: stats } = useStorageStats()
 
   const usedBytes = quota?.used ?? 0
@@ -18,7 +18,10 @@ export function StorageCard() {
   return (
     <Card className="p-6">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold">Storage used</h3>
+        <h3 className="flex items-center gap-1.5 text-base font-semibold">
+          Storage used
+          {isFetching && !isLoading && <Loader2 className="h-3.5 w-3.5 animate-spin text-ink-300" />}
+        </h3>
         {isLoading ? (
           <div className="h-16 w-16 animate-pulse rounded-full bg-surface-100 dark:bg-dark-surface2" />
         ) : totalBytes !== undefined ? (

@@ -1,4 +1,4 @@
-import { Folder, RotateCcw, Trash2 } from 'lucide-react'
+import { Folder, RotateCcw, Trash2, Loader2 } from 'lucide-react'
 import { TrashEntry } from '@/api/files'
 import { fileKindMeta, kindFromName } from '@/lib/fileIcons'
 import { formatBytes } from '@/lib/formatBytes'
@@ -14,13 +14,16 @@ export function TrashRow({
   item,
   onRestore,
   onDeleteForever,
-  busy,
+  restoring,
+  deletingForever,
 }: {
   item: TrashEntry
   onRestore: () => void
   onDeleteForever: () => void
-  busy?: boolean
+  restoring?: boolean
+  deletingForever?: boolean
 }) {
+  const busy = restoring || deletingForever
   const isFolder = item.type === 'folder'
   const meta = !isFolder ? fileKindMeta[kindFromName(item.name)] : null
   const Icon = meta?.icon
@@ -50,7 +53,7 @@ export function TrashRow({
           onClick={onRestore}
           className="rounded-lg p-1.5 text-ink-400 hover:bg-surface-100 hover:text-brand-600 disabled:opacity-40 dark:hover:bg-dark-surface2"
         >
-          <RotateCcw className="h-4 w-4" />
+          {restoring ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
         </button>
         <button
           type="button"
@@ -59,7 +62,7 @@ export function TrashRow({
           onClick={onDeleteForever}
           className="rounded-lg p-1.5 text-ink-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-40 dark:hover:bg-red-950/30"
         >
-          <Trash2 className="h-4 w-4" />
+          {deletingForever ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
         </button>
       </div>
     </div>

@@ -62,9 +62,10 @@ export function SupportContactCard() {
         size="sm"
         className="mt-4"
         onClick={handleSave}
+        loading={updateContact.isPending}
         disabled={!dirty || updateContact.isPending || !email.trim() || !phone.trim()}
       >
-        {updateContact.isPending ? 'Saving...' : 'Save'}
+        Save
       </Button>
     </Card>
   )

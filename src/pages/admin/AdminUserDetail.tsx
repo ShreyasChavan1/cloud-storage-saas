@@ -362,6 +362,7 @@ export default function AdminUserDetail() {
         }
         confirmLabel={user.status === 'ACTIVE' ? 'Suspend' : 'Reactivate'}
         danger={user.status === 'ACTIVE'}
+        loading={setStatus.isPending}
         onCancel={() => setStatusConfirmOpen(false)}
         onConfirm={handleToggleStatus}
       />
@@ -372,6 +373,7 @@ export default function AdminUserDetail() {
         message={`This permanently deletes ${user.email}'s account, including their Nextcloud storage account and all their files. This can't be undone.`}
         confirmLabel="Delete"
         danger
+        loading={deleteUser.isPending}
         onCancel={() => setDeleteConfirmOpen(false)}
         onConfirm={handleDelete}
       />
@@ -382,6 +384,7 @@ export default function AdminUserDetail() {
         label="New quota (GB)"
         initialValue={approxCurrentGb !== undefined ? String(approxCurrentGb) : ''}
         confirmLabel="Update quota"
+        loading={setQuota.isPending}
         onCancel={() => setQuotaPromptOpen(false)}
         onConfirm={handleSetQuota}
       />

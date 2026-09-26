@@ -101,7 +101,7 @@ function TrashView() {
           <h1 className="text-2xl font-bold">Trash</h1>
         </div>
         {!!items?.length && (
-          <Button variant="secondary" size="sm" onClick={handleEmptyTrash} disabled={emptyTrash.isPending}>
+          <Button variant="secondary" size="sm" onClick={handleEmptyTrash} loading={emptyTrash.isPending}>
             Empty trash
           </Button>
         )}
@@ -129,7 +129,8 @@ function TrashView() {
             <TrashRow
               key={item.id}
               item={item}
-              busy={pendingId === item.id}
+              restoring={pendingId === item.id && restore.isPending}
+              deletingForever={pendingId === item.id && deleteForever.isPending}
               onRestore={() => handleRestore(item.id, item.name)}
               onDeleteForever={() => handleDeleteForever(item.id, item.name)}
             />

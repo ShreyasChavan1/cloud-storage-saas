@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy } from 'lucide-react'
+import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy, Loader2 } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useQuota } from '@/hooks/useQuota'
@@ -28,7 +28,7 @@ const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
   )
 
 export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose: () => void }) {
-  const { data: quota } = useQuota()
+  const { data: quota, isLoading: quotaLoading, isFetching: quotaFetching } = useQuota()
   const { user } = useAuth()
   const usedBytes = quota?.used ?? 0
   const hasKnownLimit = typeof quota?.available === 'number'
@@ -89,9 +89,16 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
         <div className="rounded-2xl border border-line bg-surface-50 p-4 dark:border-dark-border dark:bg-dark-surface2">
           <div className="flex items-center justify-between text-xs font-medium text-ink-500 dark:text-ink-400">
             <span>Storage</span>
-            <span>
-              {formatBytes(usedBytes)}
-              {totalBytes !== undefined && ` / ${formatBytes(totalBytes)}`}
+            <span className="flex items-center gap-1.5">
+              {quotaFetching && <Loader2 className="h-3 w-3 animate-spin" />}
+              {quotaLoading ? (
+                <span className="inline-block h-3 w-16 animate-pulse rounded bg-surface-100 dark:bg-dark-surface2" />
+              ) : (
+                <>
+                  {formatBytes(usedBytes)}
+                  {totalBytes !== undefined && ` / ${formatBytes(totalBytes)}`}
+                </>
+              )}
             </span>
           </div>
           <ProgressBar value={usedBytes} max={totalBytes ?? Math.max(usedBytes, 1)} className="mt-2" />

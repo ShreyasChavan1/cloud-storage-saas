@@ -10,6 +10,11 @@ export const adminController = {
     return sendSuccess(res, overview)
   }),
 
+  storageOverview: asyncHandler(async (_req: Request, res: Response) => {
+    const overview = await adminService.getStorageOverview()
+    return sendSuccess(res, overview)
+  }),
+
   listPlans: asyncHandler(async (_req: Request, res: Response) => {
     const plans = await adminService.listPlans()
     return sendSuccess(res, { plans })

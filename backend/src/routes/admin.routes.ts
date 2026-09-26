@@ -22,6 +22,7 @@ const router = Router()
 router.use(requireAuth, requireAdmin)
 
 router.get('/overview', adminController.overview)
+router.get('/storage-overview', adminController.storageOverview)
 router.get('/plans', adminController.listPlans)
 
 router.get('/users', validate(listUsersSchema), adminController.listUsers)

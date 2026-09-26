@@ -9,6 +9,7 @@ interface PromptDialogProps {
   label: string
   initialValue?: string
   confirmLabel?: string
+  loading?: boolean
   onCancel: () => void
   onConfirm: (value: string) => void
 }
@@ -19,6 +20,7 @@ export function PromptDialog({
   label,
   initialValue = '',
   confirmLabel = 'Confirm',
+  loading,
   onCancel,
   onConfirm,
 }: PromptDialogProps) {
@@ -36,7 +38,7 @@ export function PromptDialog({
   }
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={onCancel}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={loading ? undefined : onCancel}>
       <form
         onClick={(e) => e.stopPropagation()}
         onSubmit={handleSubmit}
@@ -44,13 +46,13 @@ export function PromptDialog({
       >
         <h3 className="font-display text-lg font-bold text-ink-900 dark:text-white">{title}</h3>
         <div className="mt-4">
-          <Input label={label} value={value} onChange={(e) => setValue(e.target.value)} autoFocus />
+          <Input label={label} value={value} onChange={(e) => setValue(e.target.value)} autoFocus disabled={loading} />
         </div>
         <div className="mt-6 flex justify-end gap-2">
-          <Button type="button" variant="secondary" onClick={onCancel}>
+          <Button type="button" variant="secondary" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
-          <Button type="submit">{confirmLabel}</Button>
+          <Button type="submit" loading={loading}>{confirmLabel}</Button>
         </div>
       </form>
     </div>,

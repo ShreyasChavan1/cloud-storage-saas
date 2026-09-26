@@ -6,6 +6,7 @@ import { adminApi, ListUsersParams } from '@/api/admin'
 // without the two files having to agree on the shape by convention alone.
 export const adminQueryKeys = {
   overview: ['admin', 'overview'] as const,
+  storageOverview: ['admin', 'storage-overview'] as const,
   users: (params: ListUsersParams) => ['admin', 'users', params] as const,
   user: (id: string) => ['admin', 'users', id] as const,
   storage: (id: string) => ['admin', 'users', id, 'storage'] as const,
@@ -19,6 +20,18 @@ export function useAdminOverview() {
   return useQuery({
     queryKey: adminQueryKeys.overview,
     queryFn: adminApi.overview,
+  })
+}
+
+// Long staleTime + no refetch-on-focus: this rollup costs one storage-backend
+// call per provisioned account, so it shouldn't silently re-fire every time
+// the admin tabs back into the dashboard.
+export function useAdminStorageOverview() {
+  return useQuery({
+    queryKey: adminQueryKeys.storageOverview,
+    queryFn: adminApi.storageOverview,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
   })
 }
 

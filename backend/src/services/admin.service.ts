@@ -233,6 +233,26 @@ export const adminService = {
     return { totalUsers, activeUsers, suspendedUsers, adminCount, activeSessions }
   },
 
+  // Deliberately a separate endpoint from getOverview() above, and not
+  // called on every dashboard load — this is the "N WebDAV quota calls"
+  // work that comment warns about. Only provisioned accounts
+  // (nextcloudUsername set) are queried; Promise.allSettled means one
+  // account's storage backend being unreachable doesn't fail the whole
+  // rollup, it's just excluded and counted in `failedUsers`.
+  async getStorageOverview(): Promise<{ totalUsedBytes: number; provisionedUsers: number; failedUsers: number }> {
+    const users = await userRepository.findMany({ where: { nextcloudUsername: { not: null } } })
+    const results = await Promise.allSettled(users.map((u) => filesService.quota(u.id)))
+
+    let totalUsedBytes = 0
+    let failedUsers = 0
+    for (const result of results) {
+      if (result.status === 'fulfilled') totalUsedBytes += result.value.used
+      else failedUsers += 1
+    }
+
+    return { totalUsedBytes, provisionedUsers: users.length, failedUsers }
+  },
+
   // Phase 11B — thin pass-through to reconciliation.service.ts, kept here
   // rather than called directly from admin.controller.ts purely so every
   // adminController handler goes through adminService the same way (see
