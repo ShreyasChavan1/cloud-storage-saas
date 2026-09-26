@@ -10,6 +10,7 @@ import {
   updateUserStatusSchema,
   updateUserQuotaSchema,
   revokeSessionSchema,
+  updateObjectStorageCapacitySchema,
 } from '../validators/admin.validator'
 import { updateSupportContactSchema } from '../validators/support.validator'
 
@@ -23,6 +24,8 @@ router.use(requireAuth, requireAdmin)
 
 router.get('/overview', adminController.overview)
 router.get('/storage-overview', adminController.storageOverview)
+router.get('/object-storage-overview', adminController.objectStorageOverview)
+router.patch('/object-storage-capacity', validate(updateObjectStorageCapacitySchema), adminController.updateObjectStorageCapacity)
 router.get('/plans', adminController.listPlans)
 
 router.get('/users', validate(listUsersSchema), adminController.listUsers)

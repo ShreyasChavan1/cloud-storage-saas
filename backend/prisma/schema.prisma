@@ -22,6 +22,13 @@ model AppSettings {
   id String @id @default("singleton")
   supportEmail String @map("support_email")
   supportPhone String @map("support_phone")
+
+  // Not queryable from IDrive e2's S3 API (it's a billing-side plan, not
+  // an enforced object-storage quota — see ObjectStorageService.ts's
+  // header comment) — so the capacity the admin has bought is tracked
+  // here and compared against a live usage figure instead.
+  objectStorageCapacityBytes BigInt? @map("object_storage_capacity_bytes")
+
   updatedAt DateTime @updatedAt @map("updated_at")
   @@map("app_settings")
 }

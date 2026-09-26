@@ -7,6 +7,7 @@ import { adminApi, ListUsersParams } from '@/api/admin'
 export const adminQueryKeys = {
   overview: ['admin', 'overview'] as const,
   storageOverview: ['admin', 'storage-overview'] as const,
+  objectStorageOverview: ['admin', 'object-storage-overview'] as const,
   users: (params: ListUsersParams) => ['admin', 'users', params] as const,
   user: (id: string) => ['admin', 'users', id] as const,
   storage: (id: string) => ['admin', 'users', id, 'storage'] as const,
@@ -30,6 +31,18 @@ export function useAdminStorageOverview() {
   return useQuery({
     queryKey: adminQueryKeys.storageOverview,
     queryFn: adminApi.storageOverview,
+    staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
+  })
+}
+
+// Same reasoning as useAdminStorageOverview above — this one paginates the
+// whole IDrive e2 bucket via ListObjectsV2 on the backend, so it isn't
+// cheap either.
+export function useAdminObjectStorageOverview() {
+  return useQuery({
+    queryKey: adminQueryKeys.objectStorageOverview,
+    queryFn: adminApi.objectStorageOverview,
     staleTime: 5 * 60 * 1000,
     refetchOnWindowFocus: false,
   })

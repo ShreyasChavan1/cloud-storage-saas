@@ -53,7 +53,17 @@ export const revokeSessionSchema = z.object({
   params: z.object({ id: uuidParam, sessionId: uuidParam }),
 })
 
+export const updateObjectStorageCapacitySchema = z.object({
+  body: z.object({
+    // Gigabytes, same unit convention as updateUserQuotaSchema above.
+    // This is the amount purchased upfront from IDrive e2, not a live
+    // quota enforced by anything — see AppSettings.objectStorageCapacityBytes.
+    capacityGb: z.coerce.number().positive().max(10_000_000),
+  }),
+})
+
 export type CreateUserInput = z.infer<typeof createUserSchema>['body']
 export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>['body']
 export type UpdateUserQuotaInput = z.infer<typeof updateUserQuotaSchema>['body']
 export type ListUsersQuery = z.infer<typeof listUsersSchema>['query']
+export type UpdateObjectStorageCapacityInput = z.infer<typeof updateObjectStorageCapacitySchema>['body']

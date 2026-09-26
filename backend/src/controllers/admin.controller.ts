@@ -2,7 +2,7 @@ import { Request, Response } from 'express'
 import { adminService } from '../services/admin.service'
 import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
-import { ListUsersQuery } from '../validators/admin.validator'
+import { ListUsersQuery, UpdateObjectStorageCapacityInput } from '../validators/admin.validator'
 
 export const adminController = {
   overview: asyncHandler(async (_req: Request, res: Response) => {
@@ -13,6 +13,17 @@ export const adminController = {
   storageOverview: asyncHandler(async (_req: Request, res: Response) => {
     const overview = await adminService.getStorageOverview()
     return sendSuccess(res, overview)
+  }),
+
+  objectStorageOverview: asyncHandler(async (_req: Request, res: Response) => {
+    const overview = await adminService.getObjectStorageOverview()
+    return sendSuccess(res, overview)
+  }),
+
+  updateObjectStorageCapacity: asyncHandler(async (req: Request, res: Response) => {
+    const { capacityGb } = req.body as UpdateObjectStorageCapacityInput
+    const result = await adminService.setObjectStorageCapacity(capacityGb * 1024 ** 3)
+    return sendSuccess(res, result)
   }),
 
   listPlans: asyncHandler(async (_req: Request, res: Response) => {

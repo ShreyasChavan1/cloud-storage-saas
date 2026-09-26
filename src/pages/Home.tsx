@@ -630,7 +630,7 @@ const Home = () => {
             {/* Brand */}
             <div>
               <img
-                src="/dalvi-vaultgrid-icon.png"
+                src="/dalvi-vaultgrid-logo.png"
                 alt="DV Technologies"
                 className="h-14 w-auto object-contain"
               />

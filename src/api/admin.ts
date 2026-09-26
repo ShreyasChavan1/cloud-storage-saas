@@ -33,6 +33,19 @@ export interface AdminStorageOverview {
   failedUsers: number
 }
 
+// IDrive e2 (S3-compatible object storage) — separate from AdminStorageOverview
+// above (which sums per-user Nextcloud/WebDAV quotas). This reflects what's
+// actually sitting in the configured bucket, and the capacity is whatever
+// the admin has entered as purchased upfront (there's no live "total" to
+// query — see the backend's ObjectStorageService.ts for why).
+export interface AdminObjectStorageOverview {
+  configured: boolean
+  usedBytes: number | null
+  objectCount: number | null
+  capacityBytes: number | null
+  remainingBytes: number | null
+}
+
 export interface AdminPayment {
   id: string
   amount: string
@@ -84,6 +97,14 @@ export const adminApi = {
 
   storageOverview: () =>
     api.get<{ data: AdminStorageOverview }>('/admin/storage-overview').then((r) => r.data.data),
+
+  objectStorageOverview: () =>
+    api.get<{ data: AdminObjectStorageOverview }>('/admin/object-storage-overview').then((r) => r.data.data),
+
+  updateObjectStorageCapacity: (capacityGb: number) =>
+    api
+      .patch<{ data: { capacityBytes: number } }>('/admin/object-storage-capacity', { capacityGb })
+      .then((r) => r.data.data),
 
   // Backs the "create user" dialog's plan dropdown. planRepository.findAll
   // already existed (Phase 3) but had no route until Phase 10 needed one

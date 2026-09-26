@@ -75,3 +75,13 @@ export function useUpdateSupportContact() {
     },
   })
 }
+
+export function useUpdateObjectStorageCapacity() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (capacityGb: number) => adminApi.updateObjectStorageCapacity(capacityGb),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: adminQueryKeys.objectStorageOverview })
+    },
+  })
+}

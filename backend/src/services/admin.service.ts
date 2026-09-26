@@ -1,5 +1,6 @@
 import { Prisma } from '@prisma/client'
 import { userRepository } from '../repositories/user.repository'
+import { appSettingsRepository } from '../repositories/appSettings.repository'
 import { sessionRepository } from '../repositories/session.repository'
 import { paymentRepository } from '../repositories/payment.repository'
 import { planRepository } from '../repositories/plan.repository'
@@ -8,6 +9,7 @@ import { reconciliationService, ReconciliationSummary } from './reconciliation.s
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { supportService } from './support.service'
 import { filesService } from './files.service'
+import { objectStorageService } from './ObjectStorageService'
 import { toAdminUserDTO, AdminUserDTO } from '../models/user.model'
 import { toSessionDTO, SessionDTO } from '../models/session.model'
 import { toPaymentDTO, PaymentDTO } from '../models/payment.model'
@@ -251,6 +253,39 @@ export const adminService = {
     }
 
     return { totalUsedBytes, provisionedUsers: users.length, failedUsers }
+  },
+
+  // The IDrive e2 bucket's live usage vs. the capacity the admin has
+  // actually bought upfront (see AppSettings.objectStorageCapacityBytes's
+  // comment for why "total" can't come from the S3 API itself).
+  async getObjectStorageOverview(): Promise<{
+    configured: boolean
+    usedBytes: number | null
+    objectCount: number | null
+    capacityBytes: number | null
+    remainingBytes: number | null
+  }> {
+    if (!objectStorageService.isConfigured()) {
+      return { configured: false, usedBytes: null, objectCount: null, capacityBytes: null, remainingBytes: null }
+    }
+
+    const [settings, usage] = await Promise.all([appSettingsRepository.get(), objectStorageService.getUsedBytes()])
+
+    const capacityBytes = settings?.objectStorageCapacityBytes != null ? Number(settings.objectStorageCapacityBytes) : null
+
+    return {
+      configured: true,
+      usedBytes: usage.usedBytes,
+      objectCount: usage.objectCount,
+      capacityBytes,
+      remainingBytes: capacityBytes != null ? capacityBytes - usage.usedBytes : null,
+    }
+  },
+
+  // Admin-entered: how much they've actually bought from IDrive e2 upfront.
+  async setObjectStorageCapacity(capacityBytes: number): Promise<{ capacityBytes: number }> {
+    const updated = await appSettingsRepository.upsertObjectStorageCapacity(BigInt(Math.round(capacityBytes)))
+    return { capacityBytes: Number(updated.objectStorageCapacityBytes) }
   },
 
   // Phase 11B — thin pass-through to reconciliation.service.ts, kept here

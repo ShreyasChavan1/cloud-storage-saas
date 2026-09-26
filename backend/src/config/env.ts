@@ -80,7 +80,28 @@ const envSchema = z.object({
   // Razorpay Subscriptions Plan IDs. Create these once in Razorpay Dashboard/API.
   RAZORPAY_PLAN_BASIC_ID: z.string().optional(),
   RAZORPAY_PLAN_PRO_ID: z.string().optional(),
+
+  // IDrive e2 (S3-compatible object storage) — all optional. This backend
+  // doesn't require object storage to be configured to boot; the admin
+  // "object storage" card just reports itself as unconfigured until all
+  // five of these are set. Endpoint is account-specific (find it on the
+  // IDrive e2 console's bucket page, e.g. https://xyz.your-idrive-region.com);
+  // there's no fixed default the way there is for real AWS S3.
+  IDRIVE_E2_ENDPOINT: z.string().url('IDRIVE_E2_ENDPOINT must be a full URL').optional(),
+  IDRIVE_E2_REGION: z.string().default('us-east-1'),
+  IDRIVE_E2_BUCKET: z.string().optional(),
+  IDRIVE_E2_ACCESS_KEY_ID: z.string().optional(),
+  IDRIVE_E2_SECRET_ACCESS_KEY: z.string().optional(),
 }).superRefine((values, ctx) => {
+  const idriveFields = [values.IDRIVE_E2_ENDPOINT, values.IDRIVE_E2_BUCKET, values.IDRIVE_E2_ACCESS_KEY_ID, values.IDRIVE_E2_SECRET_ACCESS_KEY]
+  const idriveSetCount = idriveFields.filter(Boolean).length
+  if (idriveSetCount > 0 && idriveSetCount < idriveFields.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['IDRIVE_E2_ENDPOINT'],
+      message: 'IDRIVE_E2_ENDPOINT, IDRIVE_E2_BUCKET, IDRIVE_E2_ACCESS_KEY_ID and IDRIVE_E2_SECRET_ACCESS_KEY must all be set together, or all left unset.',
+    })
+  }
   if (values.NODE_ENV === 'production') {
     if (!values.RESEND_API_KEY) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required in production' })

@@ -2,6 +2,7 @@ import { Users, UserCheck, UserX, ShieldCheck, Radio, Database, Loader2, AlertCi
 import { Card } from '@/components/ui/Card'
 import { AdminUsersTable } from '@/components/admin/AdminUsersTable'
 import { SupportContactCard } from '@/components/admin/SupportContactCard'
+import { ObjectStorageCard } from '@/components/admin/ObjectStorageCard'
 import { useAdminOverview, useAdminStorageOverview } from '@/hooks/useAdminUsers'
 import { formatBytes } from '@/lib/formatBytes'
 
@@ -36,7 +37,9 @@ export default function AdminDashboard() {
             </p>
           </Card>
         ))}
+      </div>
 
+      <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card className="p-5">
           <div className="flex items-center gap-2 text-ink-400">
             <Database className="h-4 w-4" />
@@ -65,10 +68,15 @@ export default function AdminDashboard() {
             </>
           )}
         </Card>
+
+        <ObjectStorageCard />
       </div>
 
-      <div className="mt-5">
-        <AdminUsersTable />
+      <div className="mt-5 grid grid-cols-1 gap-5 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <AdminUsersTable />
+        </div>
+        <SupportContactCard />
       </div>
     </div>
   )
