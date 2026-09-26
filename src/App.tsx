@@ -16,11 +16,13 @@ import AdminDashboard from '@/pages/admin/AdminDashboard'
 import AdminUserDetail from '@/pages/admin/AdminUserDetail'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
+import Home from "./pages/Home";
 
 export default function App() {
   return (
     <Routes>
-      <Route path="/" element={<Navigate to="/dashboard" replace />} />
+      {/* <Route path="/" element={<Navigate to="/dashboard" replace />} /> */}
+      <Route path="/" element={<Home />} />
       <Route path="/login" element={<Login />} />
       <Route path="/register" element={<Register />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
