@@ -91,10 +91,12 @@ if ($ffmpegCheck.ExitCode -ne 0) { throw "The installed FFmpeg binary failed its
 # this installer from Nimbus after that migration but before someone
 # remembers to update and re-package it.
 $DefaultApiUrl = "https://cloud-storage-saas-production.up.railway.app"
-$ApiUrl = if ([string]::IsNullOrWhiteSpace($env:NIMBUS_INSTALL_API_URL)) { $DefaultApiUrl } else { $env:NIMBUS_INSTALL_API_URL.TrimEnd('/') }
-$Code = Read-Host "Paste the one-time Nimbus gateway enrollment code and press Enter"
-if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "Nimbus API URL and enrollment code are required." }
 
+# Moved ahead of the enrollment-code prompt (it used to run after it) so
+# that `onvif` and everything else in package.json is already installed by
+# the time the discovery wizard below needs to `require('onvif/promises')`.
+# Nothing here depends on knowing the API URL or enrollment code yet.
+#
 # NOTE: no trailing backslash after the wildcard here — "*\" matches
 # directories ONLY in PowerShell's filesystem provider, which silently
 # skipped every top-level file (package.json, tsconfig.json, .env.example)
@@ -112,6 +114,33 @@ if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm run build failed (exit code 
 npm prune --omit=dev
 if ($LASTEXITCODE -ne 0) { Pop-Location; throw "npm prune failed (exit code $LASTEXITCODE). Check the output above." }
 Pop-Location
+
+# Most people installing this have never opened their NVR's dashboard and
+# don't know its IP address or RTSP URL format. Rather than making that a
+# prerequisite, offer to find it for them via ONVIF + a local network scan
+# (discover-wizard.cjs) before asking anything else. If they already know
+# their setup, skip straight past this.
+Write-Host ""
+$KnowsDetails = Read-Host "Do you already know your camera/NVR's IP address and RTSP URL? (y/n)"
+if ($KnowsDetails -notmatch '^(?i)y(es)?$') {
+  Push-Location $InstallDir
+  node discover-wizard.cjs
+  $DiscoveryExitCode = $LASTEXITCODE
+  Pop-Location
+  if ($DiscoveryExitCode -ne 0) {
+    Write-Host ""
+    Write-Host "No cameras or NVRs could be found automatically on this network." -ForegroundColor Yellow
+    Write-Host "Please open your NVR or camera's own web dashboard (its IP address is usually" -ForegroundColor Yellow
+    Write-Host "printed on a label on the device, or visible in your router's connected-devices" -ForegroundColor Yellow
+    Write-Host "list) to find its IP address and RTSP URL, then run this installer again." -ForegroundColor Yellow
+    Read-Host "Press Enter to exit"
+    exit 1
+  }
+}
+
+$ApiUrl = if ([string]::IsNullOrWhiteSpace($env:NIMBUS_INSTALL_API_URL)) { $DefaultApiUrl } else { $env:NIMBUS_INSTALL_API_URL.TrimEnd('/') }
+$Code = Read-Host "Paste the one-time Nimbus gateway enrollment code and press Enter"
+if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "Nimbus API URL and enrollment code are required." }
 
 @"
 NIMBUS_API_URL=$ApiUrl

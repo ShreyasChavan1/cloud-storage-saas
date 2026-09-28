@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import archiver from 'archiver'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(__dirname, '..')
+const repoRoot = join(__dirname, '..', '..')
 const gatewaySrc = join(repoRoot, 'nvr-gateway')
 const outDir = join(repoRoot, 'public', 'nvr-gateway')
 
@@ -23,7 +23,7 @@ const outDir = join(repoRoot, 'public', 'nvr-gateway')
 const SHARED_FILES = ['README.md', '.gitignore', 'package.json', '.env.example', 'tsconfig.json']
 
 const TARGETS = [
-  { name: 'nimbus-nvr-gateway-windows.zip', extra: ['install.ps1', 'uninstall.ps1', 'install.bat', 'service-install.cjs', 'service-runner.cjs', 'start-gateway.bat', 'stop-gateway.bat'] },
+  { name: 'nimbus-nvr-gateway-windows.zip', extra: ['install.ps1', 'uninstall.ps1', 'install.bat', 'discover-wizard.cjs', 'service-install.cjs', 'service-runner.cjs', 'start-gateway.bat', 'stop-gateway.bat'] },
   { name: 'nimbus-nvr-gateway-linux.zip', extra: ['install.sh', 'uninstall.sh'] },
 ]
 
