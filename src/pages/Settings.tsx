@@ -236,7 +236,13 @@ export default function Settings() {
                   </div>
                 </div>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Windows</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Extract the zip and double-click <code>install.bat</code>. Click "Yes" on the permission prompt, then paste your enrollment code when asked — no PowerShell or terminal needed.</p></div>
+                  <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Windows</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Extract the ZIP file and double-click install.bat. Click “Yes” when Windows asks for permission.
+
+If you already know your NVR’s IP address and RTSP URL, enter them when prompted. If you don’t, let the Gateway run its automatic discovery to find the NVR and available RTSP information, then use those details to configure your NVR in Here.
+
+Finally, enter your  enrollment code when prompted.
+
+No PowerShell or terminal commands are required.</p></div>
                   <div className="rounded-lg border border-line bg-surface-0 p-3 dark:border-dark-border dark:bg-dark-surface"><div className="flex items-center gap-2 text-sm font-medium"><Terminal className="h-4 w-4" />Linux</div><p className="mt-1 text-xs text-ink-500 dark:text-ink-400">Extract the zip, then run <code>sudo ./install.sh</code> from inside that folder. The installer registers a systemd service and starts it automatically.</p></div>
                 </div>
               </div>
