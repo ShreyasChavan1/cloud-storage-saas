@@ -27,6 +27,19 @@ const os = require('os')
 const net = require('net')
 const readline = require('readline')
 
+// Defense in depth beyond the specific Hikvision-firmware fix in
+// discoverOnvifBroadcast() below: camera/NVR firmware in the wild is
+// wildly inconsistent, and this script exists specifically so a
+// non-technical person never has to see a raw Node stack trace. If
+// anything unforeseen still slips through as a truly uncaught exception,
+// fail this one scan gracefully -- same outcome as "found nothing" --
+// rather than crashing the whole installer.
+process.on('uncaughtException', (err) => {
+  console.error('')
+  console.error('Discovery hit an unexpected error and had to stop:', err && err.message ? err.message : err)
+  process.exit(1)
+})
+
 const RTSP_PORTS = [554, 8554, 10554]
 const OTHER_CCTV_PORTS = [80, 443, 8000, 8080, 8899]
 const TCP_TIMEOUT_MS = 400
@@ -145,11 +158,45 @@ async function scanForRtspPorts(hosts) {
   return results
 }
 
-// Real ONVIF path -- exact, ready-to-use RTSP URLs, no guessing. Falls
-// back to nothing (not an error) if WS-Discovery is blocked by a firewall
-// or the device just doesn't speak ONVIF; the raw scan above still covers
-// that case, just with a less specific result.
-async function discoverOnvif(username, password) {
+// Pulls channel/RTSP-URL info out of an already-constructed (but not yet
+// connected) Cam instance. Shared by both discovery paths below: the
+// WS-Discovery broadcast path (which hands us pre-built Cam instances) and
+// the direct-connect fallback (which builds one itself from a known
+// IP/port). Returns null if this device didn't yield anything usable --
+// wrong credentials, connection refused, not actually ONVIF, etc. Any of
+// those are just "not confirmable this way", not fatal to the overall scan.
+async function extractOnvifDevice(cam) {
+  try {
+    await cam.connect()
+    const info = await cam.getDeviceInformation().catch(() => null)
+    const profiles = await cam.getProfiles().catch(() => [])
+    const channels = []
+    for (const profile of profiles || []) {
+      const token = profile && profile.$ && profile.$.token
+      if (!token) continue
+      try {
+        const stream = await cam.getStreamUri({ protocol: 'RTSP', profileToken: token })
+        if (stream && stream.uri) {
+          channels.push({ name: profile.name || `Channel ${channels.length + 1}`, rtspUrl: stream.uri })
+        }
+      } catch (err) {
+        // This one profile didn't yield a stream URI -- skip it, keep the rest.
+      }
+    }
+    if (!channels.length) return null
+    return { ip: cam.hostname, manufacturer: info && info.manufacturer, model: info && info.model, channels }
+  } catch (err) {
+    return null
+  }
+}
+
+// Real ONVIF path via WS-Discovery's UDP multicast broadcast -- finds
+// devices without needing to already know their IP. In practice this
+// often finds nothing even on a network where ONVIF itself works fine:
+// many NVRs ship with WS-Discovery disabled by default, and some routers
+// drop multicast traffic entirely. That's not treated as a failure here --
+// discoverOnvifDirect() below is the fallback for exactly this case.
+async function discoverOnvifBroadcast(username, password) {
   const found = []
   let onvifPromises
   try {
@@ -160,6 +207,22 @@ async function discoverOnvif(username, password) {
   }
   const { Discovery } = onvifPromises
 
+  // `Discovery` is a shared singleton EventEmitter inside the onvif
+  // package, and it emits 'error' whenever any device's WS-Discovery
+  // reply fails to parse -- notably, Hikvision-family firmware (like the
+  // NVR this was tested against) pads its discovery replies with extra
+  // whitespace to hit a minimum packet size, which the package's XML
+  // parser chokes on. Node treats an 'error' event with zero listeners as
+  // fatal and crashes the whole process; the try/catch below only guards
+  // the Promise rejection path, not this separate event-based one, so
+  // without this listener a single malformed reply from anywhere on the
+  // network takes the entire installer down. A single malformed reply
+  // also makes Discovery.probe() reject entirely (see its source -- any
+  // parse error is collected and rejected even if OTHER devices were
+  // found successfully), which is why discoverOnvifDirect() below exists
+  // as a fallback that doesn't depend on broadcast discovery at all.
+  Discovery.on('error', () => {})
+
   let cams = []
   try {
     cams = await Discovery.probe({ timeout: ONVIF_TIMEOUT_MS })
@@ -168,32 +231,44 @@ async function discoverOnvif(username, password) {
   }
 
   for (const cam of cams) {
-    try {
-      cam.username = username
-      cam.password = password
-      await cam.connect()
-      const info = await cam.getDeviceInformation().catch(() => null)
-      const profiles = await cam.getProfiles().catch(() => [])
-      const channels = []
-      for (const profile of profiles || []) {
-        const token = profile && profile.$ && profile.$.token
-        if (!token) continue
-        try {
-          const stream = await cam.getStreamUri({ protocol: 'RTSP', profileToken: token })
-          if (stream && stream.uri) {
-            channels.push({ name: profile.name || `Channel ${channels.length + 1}`, rtspUrl: stream.uri })
-          }
-        } catch (err) {
-          // This one profile didn't yield a stream URI -- skip it, keep the rest.
-        }
+    cam.username = username
+    cam.password = password
+    const device = await extractOnvifDevice(cam)
+    if (device) found.push(device)
+  }
+  return found
+}
+
+// Fallback for devices the broadcast above didn't find: connect directly
+// to each IP the raw port scan already turned up, on each of its open
+// HTTP-ish ports (ONVIF's SOAP service commonly lives on 80, 8000 or
+// 8080 -- there's no reliable way to know which without just trying).
+// This is what actually found the RTSP URL in the case that prompted this
+// fallback to be added: the broadcast found nothing, but a direct
+// connection to the NVR's already-known IP on port 80 worked fine.
+async function discoverOnvifDirect(candidates, username, password) {
+  let onvifPromises
+  try {
+    onvifPromises = require('onvif/promises')
+  } catch (err) {
+    return []
+  }
+  const { Cam } = onvifPromises
+
+  const found = []
+  for (const { ip, ports } of candidates) {
+    for (const port of ports) {
+      let cam
+      try {
+        cam = new Cam({ hostname: ip, port, username, password })
+      } catch (err) {
+        continue
       }
-      if (channels.length) {
-        found.push({ ip: cam.hostname, manufacturer: info && info.manufacturer, model: info && info.model, channels })
+      const device = await extractOnvifDevice(cam)
+      if (device) {
+        found.push(device)
+        break // this IP is accounted for -- no need to try its other ports
       }
-    } catch (err) {
-      // Device didn't accept these credentials, or dropped the connection.
-      // Not fatal to the overall scan -- just means this one device isn't
-      // reportable as "confirmed"; the raw port scan may still catch it.
     }
   }
   return found
@@ -222,11 +297,22 @@ async function main() {
   console.log('')
   console.log('Scanning...')
 
-  const [onvifResults, rawResults] = await Promise.all([
-    discoverOnvif(username, password),
+  const [broadcastResults, rawResults] = await Promise.all([
+    discoverOnvifBroadcast(username, password),
     scanForRtspPorts(subnetHosts(localIp)),
   ])
 
+  // Anything the broadcast already confirmed doesn't need a second,
+  // slower, direct-connect attempt.
+  const broadcastIps = new Set(broadcastResults.map((d) => d.ip))
+  const directCandidates = rawResults
+    .filter((d) => !broadcastIps.has(d.ip) && d.otherPorts.length)
+    .map((d) => ({ ip: d.ip, ports: d.otherPorts }))
+  const directResults = directCandidates.length
+    ? await discoverOnvifDirect(directCandidates, username, password)
+    : []
+
+  const onvifResults = [...broadcastResults, ...directResults]
   const onvifIps = new Set(onvifResults.map((d) => d.ip))
   const possible = rawResults.filter((d) => !onvifIps.has(d.ip))
 

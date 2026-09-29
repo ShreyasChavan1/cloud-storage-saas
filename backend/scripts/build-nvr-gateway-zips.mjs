@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 import archiver from 'archiver'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const repoRoot = join(__dirname, '..', '..')
+const repoRoot = join(__dirname, '..')
 const gatewaySrc = join(repoRoot, 'nvr-gateway')
 const outDir = join(repoRoot, 'public', 'nvr-gateway')
 
