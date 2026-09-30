@@ -17,9 +17,17 @@ import { supportApi, SupportContact } from "@/api/support";
 
 const Home = () => {
   const [contact, setContact] = useState<SupportContact | null>(null);
+  const [contactFailed, setContactFailed] = useState(false);
 
   useEffect(() => {
-    supportApi.getContact().then(setContact);
+    supportApi
+      .getContact()
+      .then(setContact)
+      // Without this, any failed fetch (a real bug on the backend's auth
+      // requirement, or just a transient network hiccup) left this stuck
+      // on "Loading..." forever, since nothing ever set `contact` to
+      // anything else. Now it fails visibly instead of silently.
+      .catch(() => setContactFailed(true));
   }, []);
 
   return (
@@ -662,14 +670,14 @@ const Home = () => {
                 <div>
                   <div className="text-[#8FA0B8]">Owner Email</div>
                   <div className="mt-1 text-white">
-                    {contact?.email ?? "Loading..."}
+                    {contact?.email ?? (contactFailed ? "Unavailable" : "Loading...")}
                   </div>
                 </div>
 
                 <div>
                   <div className="text-[#8FA0B8]">Phone</div>
                   <div className="mt-1 text-white">
-                    {contact?.phone ?? "Loading..."}
+                    {contact?.phone ?? (contactFailed ? "Unavailable" : "Loading...")}
                   </div>
                 </div>
               </div>
