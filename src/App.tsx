@@ -35,6 +35,7 @@ export default function App() {
         <Route path="/dashboard" element={<Dashboard />} />
         <Route path="/files" element={<Files />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/cctv" element={<Settings only="cctv" />} />
         <Route path="/mobile-app" element={<MobileApp />} />
         <Route path="/support" element={<Support />} />
         {/* adminOnly is a UX redirect only — the backend's requireAdmin

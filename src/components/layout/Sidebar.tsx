@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy, Loader2 } from 'lucide-react'
+import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy, Loader2, Video } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useQuota } from '@/hooks/useQuota'
@@ -14,6 +14,7 @@ import { cn } from '@/lib/cn'
 // rather than hiding the entry points entirely.
 const nav = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { to: '/cctv', label: 'CCTV', icon: Video },
   { to: '/files', label: 'Files', icon: Folder },
   { to: '/files?view=favorites', label: 'Favorites', icon: Star },
   { to: '/files?view=trash', label: 'Trash', icon: Trash2 },

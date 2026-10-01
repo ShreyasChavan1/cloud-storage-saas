@@ -23,10 +23,10 @@ const tabs = [
   { id: 'cctv', label: 'CCTV', icon: Video },
 ]
 
-export default function Settings() {
+export default function Settings({ only }: { only?: 'cctv' } = {}) {
   const { user, setUser } = useAuth()
   const { showToast } = useToast()
-  const [active, setActive] = useState('profile')
+  const [active, setActive] = useState<string>(only ?? 'profile')
   const [canceling, setCanceling] = useState(false)
   const [passwords, setPasswords] = useState({ current: '', next: '', confirm: '' })
   const [passwordSaving, setPasswordSaving] = useState(false)
@@ -78,12 +78,21 @@ export default function Settings() {
 
   return (
     <div className="mx-auto max-w-5xl animate-fade-up">
-      <h1 className="text-2xl font-bold sm:text-3xl">Settings</h1>
-      <p className="mt-1 text-ink-500 dark:text-ink-400">Manage your account, security and preferences.</p>
+      {only ? (
+        <>
+          <h1 className="text-2xl font-bold sm:text-3xl">CCTV</h1>
+          <p className="mt-1 text-ink-500 dark:text-ink-400">Back up your NVR and camera recordings to the cloud.</p>
+        </>
+      ) : (
+        <>
+          <h1 className="text-2xl font-bold sm:text-3xl">Settings</h1>
+          <p className="mt-1 text-ink-500 dark:text-ink-400">Manage your account, security and preferences.</p>
+        </>
+      )}
 
-      <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[200px_1fr]">
-        <nav className="flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
-          {tabs.map((tab) => (
+      <div className={cn('mt-6 grid grid-cols-1 gap-6', !only && 'lg:grid-cols-[200px_1fr]')}>
+        <nav className={cn('flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible', only && 'hidden')}>
+          {tabs.filter((tab) => only || tab.id !== 'cctv').map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActive(tab.id)}

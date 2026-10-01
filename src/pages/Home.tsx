@@ -12,8 +12,52 @@ import {
   Server,
   UploadCloud,
   Zap,
+  LayoutDashboard,
+  Folder,
+  Star,
 } from "lucide-react";
 import { supportApi, SupportContact } from "@/api/support";
+
+const reviews = [
+  {
+    name: "Rohan Mehta",
+    role: "Retail store owner",
+    text: "Our NVR only keeps a few weeks of footage. Now every recording is also backed up in the cloud without me touching anything.",
+  },
+  {
+    name: "Priya Nair",
+    role: "Interior designer",
+    text: "I keep all client drawings and project photos in Nimbus. Finding a file from my phone while on site takes seconds.",
+  },
+  {
+    name: "Amit Kulkarni",
+    role: "Warehouse manager",
+    text: "Setup was simple. We installed the gateway on one PC and the camera recordings started uploading on their own.",
+  },
+  {
+    name: "Sneha Patil",
+    role: "Chartered accountant",
+    text: "Clean, fast and easy to use. Sharing documents with clients is much simpler than emailing large attachments.",
+  },
+  {
+    name: "Imran Shaikh",
+    role: "Showroom owner",
+    text: "Having an off-site copy of our CCTV footage gives me real peace of mind. The support team also replies quickly.",
+  },
+  {
+    name: "Kavita Deshmukh",
+    role: "Clinic administrator",
+    text: "Our records are organised in folders and available whenever we need them. Pricing is fair for the storage we get.",
+  },
+];
+
+const ReviewStars = () => (
+  <div className="flex gap-0.5" aria-label="5 out of 5 stars">
+    {[0, 1, 2, 3, 4].map((i) => (
+      <Star key={i} className="h-4 w-4 fill-[#E8792B] text-[#E8792B]" />
+    ))}
+  </div>
+);
 
 const Home = () => {
   const [contact, setContact] = useState<SupportContact | null>(null);
@@ -148,24 +192,51 @@ const Home = () => {
                       <span className="h-2.5 w-2.5 rounded-full bg-[#E8792B]/80" />
                       <span className="h-2.5 w-2.5 rounded-full bg-[#D7D2C8]" />
                       <span className="h-2.5 w-2.5 rounded-full bg-[#D7D2C8]" />
-                      <div className="ml-4 h-6 max-w-md flex-1 rounded-md border border-[#E4DED4] bg-white" />
+                      <div className="ml-4 flex h-6 max-w-md flex-1 items-center rounded-md border border-[#E4DED4] bg-white px-3 text-[11px] text-[#85847E]">
+                        nimbus.dvtechnologies.in/dashboard
+                      </div>
                     </div>
 
                     <div className="grid min-h-[330px] gap-6 p-6 md:grid-cols-[155px_1fr]">
                       <div className="hidden space-y-2 md:block">
-                        <div className="h-8 rounded-md border border-[#E8792B]/20 bg-[#E8792B]/10" />
-                        <div className="h-8 rounded-md bg-[#F0EDE7]" />
-                        <div className="h-8 rounded-md bg-[#F0EDE7]" />
-                        <div className="h-8 rounded-md bg-[#F0EDE7]" />
+                        {[
+                          ["Dashboard", LayoutDashboard, true],
+                          ["CCTV", Video, false],
+                          ["Files", Folder, false],
+                          ["Favorites", Star, false],
+                        ].map(([label, Icon, active]) => {
+                          const NavIcon = Icon as typeof LayoutDashboard;
+
+                          return (
+                            <div
+                              key={label as string}
+                              className={
+                                active
+                                  ? "flex h-8 items-center gap-2 rounded-md border border-[#E8792B]/20 bg-[#E8792B]/10 px-2.5 text-xs font-medium text-[#D86520]"
+                                  : "flex h-8 items-center gap-2 rounded-md bg-[#F0EDE7] px-2.5 text-xs font-medium text-[#6C6A63]"
+                              }
+                            >
+                              <NavIcon className="h-3.5 w-3.5" />
+                              {label as string}
+                            </div>
+                          );
+                        })}
                       </div>
 
                       <div>
                         <div className="mb-5 flex items-center justify-between">
                           <div>
-                            <div className="h-5 w-32 rounded bg-[#BEB8AD]" />
-                            <div className="mt-2 h-3 w-48 rounded bg-[#D6D0C5]" />
+                            <div className="text-base font-semibold text-[#132A4E]">
+                              Dashboard
+                            </div>
+                            <div className="mt-1 text-xs text-[#85847E]">
+                              Your files and CCTV backups
+                            </div>
                           </div>
-                          <div className="h-8 w-24 rounded-md border border-[#E8792B]/25 bg-[#E8792B]/15" />
+                          <div className="flex h-8 items-center gap-1.5 rounded-md border border-[#E8792B]/25 bg-[#E8792B]/15 px-3 text-xs font-semibold text-[#D86520]">
+                            <UploadCloud className="h-3.5 w-3.5" />
+                            Upload
+                          </div>
                         </div>
 
                         <div className="grid gap-4 sm:grid-cols-3">
@@ -385,7 +456,7 @@ const Home = () => {
 
                       <div className="flex-1">
                         <div className="text-sm font-semibold !text-[#253653]">
-                          Nimbus Gateway
+                          DVT Gateway
                         </div>
                         <div className="text-xs text-[#85847E]">
                           Automatic upload
@@ -409,7 +480,7 @@ const Home = () => {
 
                       <div className="flex-1">
                         <div className="text-sm font-semibold !text-[#253653]">
-                          Nimbus Cloud
+                          DVT Cloud
                         </div>
                         <div className="text-xs text-[#85847E]">
                           Off-site recording backup
@@ -433,7 +504,7 @@ const Home = () => {
                 </h2>
 
                 <p className="mt-5 max-w-xl leading-7 !text-[#62645F]">
-                  Nimbus can automatically transfer NVR recordings to cloud
+                  DVT Cloud can automatically transfer NVR recordings to cloud
                   storage, giving businesses an off-site copy of important
                   footage.
                 </p>
@@ -451,6 +522,19 @@ const Home = () => {
                     </div>
                   ))}
                 </div>
+
+                <figure className="mt-8 max-w-xl rounded-xl border border-[#D8D0C1] bg-white p-5">
+                  <ReviewStars />
+                  <blockquote className="mt-3 text-sm leading-6 !text-[#444B55]">
+                    “{reviews[2].text}”
+                  </blockquote>
+                  <figcaption className="mt-3 text-xs text-[#85847E]">
+                    <span className="font-semibold text-[#253653]">
+                      {reviews[2].name}
+                    </span>
+                    , {reviews[2].role}
+                  </figcaption>
+                </figure>
               </div>
             </div>
           </div>
@@ -472,7 +556,7 @@ const Home = () => {
 
             <p className="mt-5 leading-7 !text-[#62645F]">
               Connect your devices, choose what you want protected, and let
-              Nimbus handle the rest.
+              our app handle the rest.
             </p>
           </div>
 
@@ -482,7 +566,7 @@ const Home = () => {
                 number: "01",
                 icon: Zap,
                 title: "Connect",
-                text: "Create your Nimbus account and connect your storage or NVR.",
+                text: "Create your  account and connect your storage or NVR.",
               },
               {
                 number: "02",
@@ -540,7 +624,7 @@ const Home = () => {
               </h2>
 
               <p className="mt-5 leading-7 text-[#D5DCE6]">
-                Nimbus is designed to give you a central place for important
+                DVT Cloud is designed to give you a central place for important
                 files and backup data, with controlled access to your account
                 and stored content.
               </p>
@@ -557,7 +641,7 @@ const Home = () => {
                   },
                   {
                     title: "Controlled access",
-                    text: "Access your stored files through the Nimbus application.",
+                    text: "Access your stored files through the DVT Cloud application.",
                   },
                 ].map((item) => (
                   <div
@@ -578,6 +662,62 @@ const Home = () => {
           </div>
         </section>
 
+        {/* Reviews */}
+        <section
+          id="reviews"
+          className="border-b border-[#DDD6C8] bg-[#F3EFE7]"
+        >
+          <div className="mx-auto max-w-7xl px-6 py-24 lg:px-8 lg:py-28">
+            <div className="max-w-2xl">
+              <div className="mb-5 text-xs font-semibold uppercase tracking-[0.12em] text-[#D86520]">
+                Customer reviews
+              </div>
+
+              <h2 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                Trusted by businesses and professionals.
+              </h2>
+
+              <p className="mt-5 leading-7 !text-[#62645F]">
+                See how people use DVT Cloud to store files and back up their
+                CCTV recordings.
+              </p>
+            </div>
+
+            <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {reviews.map((review) => (
+                <figure
+                  key={review.name}
+                  className="flex flex-col rounded-xl border border-[#D8D0C1] bg-white p-7"
+                >
+                  <ReviewStars />
+
+                  <blockquote className="mt-4 flex-1 text-sm leading-6 !text-[#444B55]">
+                    “{review.text}”
+                  </blockquote>
+
+                  <figcaption className="mt-6 flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full border border-[#E8792B]/20 bg-[#E8792B]/10 text-xs font-semibold text-[#D86520]">
+                      {review.name
+                        .split(" ")
+                        .map((part) => part[0])
+                        .join("")}
+                    </div>
+
+                    <div>
+                      <div className="text-sm font-semibold text-[#253653]">
+                        {review.name}
+                      </div>
+                      <div className="text-xs text-[#85847E]">
+                        {review.role}
+                      </div>
+                    </div>
+                  </figcaption>
+                </figure>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* CTA */}
         <section className="mx-auto max-w-5xl px-6 py-24 lg:px-8 lg:py-28">
           <div className="overflow-hidden rounded-2xl border border-[#D8D0C1] bg-white px-6 py-14 text-center shadow-[0_18px_50px_rgba(19,42,78,0.07)] sm:px-12">
@@ -587,7 +727,7 @@ const Home = () => {
               </h2>
 
               <p className="mx-auto mt-4 max-w-xl leading-7 !text-[#62645F]">
-                Store your files and protect your CCTV recordings with Nimbus
+                Store your files and protect your CCTV recordings with DVT Cloud
                 cloud storage.
               </p>
 
