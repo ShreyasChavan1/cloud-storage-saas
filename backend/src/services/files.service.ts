@@ -81,6 +81,28 @@ export const filesService = {
     }
   },
 
+  // Same as upload(), but the file is already on local disk (multer
+  // diskStorage) and is streamed to Nextcloud — used for the real upload
+  // endpoint so a multi-GB file never has to fit in this process's memory.
+  async uploadFromDisk(
+    userId: string,
+    rawPath: string | undefined,
+    filename: string,
+    localPath: string,
+    size: number
+  ): Promise<FileEntryDTO> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    const folder = sanitizeDavPath(rawPath)
+    const destination = sanitizeDavPath(posix.join(folder, filename))
+    try {
+      await webDavService.uploadFromFile(nextcloudUsername, davPassword, destination, localPath, size)
+      const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
+      return toFileEntryDTO(stat)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
   async download(
     userId: string,
     rawPath: string

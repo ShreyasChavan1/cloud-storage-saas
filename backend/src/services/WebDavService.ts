@@ -1,5 +1,6 @@
 import type { FileStat, WebDAVClient } from 'webdav'
 import { Readable } from 'stream'
+import { createReadStream } from 'fs'
 import { env } from '../config/env'
 
 /**
@@ -96,6 +97,17 @@ export const webDavService = {
     await run(async () => {
       const client = await clientFor(nextcloudUsername, davPassword)
       return client.putFileContents(path, data, { overwrite: true })
+    })
+  },
+
+  // Streams a file that is already on local disk to Nextcloud instead of
+  // holding it in RAM. The byte length is sent explicitly so the PUT goes out
+  // with a Content-Length header rather than chunked transfer-encoding —
+  // Nextcloud/Apache handle that far more reliably for very large files.
+  async uploadFromFile(nextcloudUsername: string, davPassword: string, path: string, localPath: string, size: number): Promise<void> {
+    await run(async () => {
+      const client = await clientFor(nextcloudUsername, davPassword)
+      return client.putFileContents(path, createReadStream(localPath) as any, { overwrite: true, contentLength: size })
     })
   },
 

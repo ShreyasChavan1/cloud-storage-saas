@@ -1,25 +1,33 @@
 import { Request, Response } from 'express'
 import multer from 'multer'
+import fs from 'fs'
+import os from 'os'
+import path from 'path'
+import { randomUUID } from 'crypto'
 import { filesService } from '../services/files.service'
 import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
 import { ApiError } from '../utils/ApiError'
 
-// Buffered in memory rather than streamed to disk first — simplest correct
-// option, but it means the WHOLE file sits in this Node process's RAM for
-// the duration of the upload. 2GB was chosen to comfortably clear real
-// large-file use (256MB+ videos etc.) while still being a bounded cap, not
-// unlimited — an unbounded limit here would let a single upload (or a
-// handful of concurrent ones) exhaust the server's memory and take the
-// whole backend down for every user, not just the uploader. If this
-// process runs on a host with limited RAM (many Railway plans included),
-// raising this further is a real availability risk, not just a number to
-// bump — the proper fix at that point is switching to disk-backed
-// multer.diskStorage() (or a true streaming multipart parser piped
-// straight into the WebDAV PUT) rather than raising this cap indefinitely.
+// Uploads are written to a temp file on disk first and then streamed to
+// Nextcloud, instead of being buffered in RAM. The old memoryStorage setup
+// kept the WHOLE file in this Node process's memory for the entire upload,
+// which is what made multi-GB files unreliable (and a few concurrent ones
+// able to take the whole API down). With disk storage, memory use stays flat
+// no matter how big the file is; the cap below is just a sanity limit that
+// matches the 10G client_max_body_size on the Nextcloud nginx.
+const UPLOAD_TMP_DIR = path.join(os.tmpdir(), 'nimbus-uploads')
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
+
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 2 * 1024 * 1024 * 1024 },
+  storage: multer.diskStorage({
+    destination: (_req, _file, cb) => {
+      fs.mkdir(UPLOAD_TMP_DIR, { recursive: true }, (err) => cb(err, UPLOAD_TMP_DIR))
+    },
+    // Random name — the real (user-supplied) filename is never used on disk.
+    filename: (_req, _file, cb) => cb(null, randomUUID()),
+  }),
+  limits: { fileSize: MAX_UPLOAD_BYTES },
 })
 
 export const uploadMiddleware = upload.single('file')
@@ -34,13 +42,20 @@ export const filesController = {
     if (!req.file) {
       throw ApiError.badRequest('No file provided — send it as multipart/form-data under the "file" field')
     }
-    const entry = await filesService.upload(
-      req.user!.sub,
-      req.query.path as string | undefined,
-      req.file.originalname,
-      req.file.buffer
-    )
-    return sendSuccess(res, { entry }, 201)
+    const tempPath = req.file.path
+    try {
+      const entry = await filesService.uploadFromDisk(
+        req.user!.sub,
+        req.query.path as string | undefined,
+        req.file.originalname,
+        tempPath,
+        req.file.size
+      )
+      return sendSuccess(res, { entry }, 201)
+    } finally {
+      // Always remove the temp copy, whether the upload succeeded or failed.
+      fs.promises.unlink(tempPath).catch(() => undefined)
+    }
   }),
 
   download: asyncHandler(async (req: Request, res: Response) => {
