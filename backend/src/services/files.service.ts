@@ -43,7 +43,25 @@ function translateWebDavError(err: unknown): never {
       throw ApiError.conflict('A conflicting item already exists at that location')
     }
     if (err.statusCode === 507) throw ApiError.insufficientStorage()
+    if (err.statusCode === 413) {
+      logger.error({ statusCode: err.statusCode, cause: err.message }, 'Nextcloud rejected the request as too large')
+      throw ApiError.badRequest('The storage server rejected this file as too large.')
+    }
+    if (err.statusCode === 502 || err.statusCode === 503 || err.statusCode === 504) {
+      logger.error({ statusCode: err.statusCode, cause: err.message }, 'Nextcloud did not respond in time')
+      throw ApiError.serviceUnavailable('The storage server took too long to respond. Please try again.')
+    }
   }
+  // Previously this threw without logging anything, so a failed upload left
+  // no trace of WHY. The WebDavError message never contains credentials
+  // (see WebDavService.run), so it is safe to log.
+  logger.error(
+    {
+      statusCode: err instanceof WebDavError ? err.statusCode : undefined,
+      cause: err instanceof Error ? err.message : String(err),
+    },
+    'Nextcloud WebDAV request failed'
+  )
   throw ApiError.internal('File storage request failed')
 }
 
