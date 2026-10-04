@@ -107,7 +107,22 @@ async function run<T>(fn: () => Promise<T>): Promise<T> {
       response?: { status?: number; statusCode?: number }
     }
     const statusCode = davErr.status ?? davErr.statusCode ?? davErr.response?.status ?? davErr.response?.statusCode
-    const message = err instanceof Error ? err.message : 'WebDAV request failed'
+    let message = err instanceof Error ? err.message : 'WebDAV request failed'
+
+    // The webdav library's own error only says "Invalid response: 413 ..." and
+    // drops Nextcloud's explanation, which sits in the response body. Read it
+    // (when there is one and it hasn't been consumed) so logs show the reason.
+    const res = (err as { response?: { text?: () => Promise<string>; bodyUsed?: boolean } }).response
+    if (res && typeof res.text === 'function' && !res.bodyUsed) {
+      try {
+        const body = await res.text()
+        const match = /<s:message>([^<]*)<\/s:message>/.exec(body)
+        const detail = (match ? match[1] : body).replace(/\s+/g, ' ').trim().slice(0, 300)
+        if (detail) message = `${message} | ${detail}`
+      } catch {
+        // body unreadable — keep the original message
+      }
+    }
     throw new WebDavError(message, statusCode)
   }
 }

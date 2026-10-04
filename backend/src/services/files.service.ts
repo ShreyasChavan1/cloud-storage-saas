@@ -75,6 +75,9 @@ function translateWebDavError(err: unknown): never {
 // 10 GB file. Must stay >= 5 MiB, the minimum S3 part size.
 const UPLOAD_CHUNK_SIZE = 32 * 1024 * 1024
 
+// Largest file the in-app preview will serve. Keep in sync with PreviewModal.tsx.
+const MAX_PREVIEW_BYTES = 100 * 1024 * 1024
+
 export const filesService = {
   async list(userId: string, rawPath: string | undefined): Promise<(FileEntryDTO & { favorite: boolean })[]> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
@@ -226,6 +229,11 @@ export const filesService = {
     try {
       const stat = await webDavService.stat(nextcloudUsername, davPassword, path)
       if (stat.type === 'directory') throw ApiError.badRequest('Cannot preview a folder')
+      // Previews are read fully into the browser; refuse huge files so a stray
+      // click can't pin a multi-GB transfer (and a lock on the file) open.
+      if (stat.size > MAX_PREVIEW_BYTES) {
+        throw new ApiError(413, 'This file is too large to preview. Use Download instead.')
+      }
       const stream = signal
         ? await webDavService.downloadStream(nextcloudUsername, davPassword, path, signal)
         : await webDavService.downloadStream(nextcloudUsername, davPassword, path)

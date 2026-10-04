@@ -133,8 +133,8 @@ export const filesApi = {
   // Triggers a real browser download — the backend streams the file bytes,
   // this just turns that response into a saved file rather than returning
   // the blob to the caller.
-  preview: async (path: string) => {
-    const res = await api.get('/files/preview', { params: { path }, responseType: 'blob' })
+  preview: async (path: string, signal?: AbortSignal) => {
+    const res = await api.get('/files/preview', { params: { path }, responseType: 'blob', signal })
     return res.data as Blob
   },
 

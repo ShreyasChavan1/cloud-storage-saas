@@ -25,6 +25,9 @@ function kind(entry: FileEntry): 'image' | 'pdf' | 'video' | 'audio' | 'text' | 
   return 'unsupported'
 }
 
+// Keep in sync with MAX_PREVIEW_BYTES in backend/src/services/files.service.ts
+const MAX_PREVIEW_BYTES = 100 * 1024 * 1024
+
 export function PreviewModal({ entry, onClose }: PreviewModalProps) {
   const { showToast } = useToast()
   const [url, setUrl] = useState<string | null>(null)
@@ -37,14 +40,24 @@ export function PreviewModal({ entry, onClose }: PreviewModalProps) {
     if (!entry) return
     let alive = true
     let objectUrl: string | null = null
+    const controller = new AbortController()
     setLoading(true); setError(null); setUrl(null); setText(null)
-    filesApi.preview(entry.path).then(async (blob) => {
+    // The preview downloads the whole file into the browser, so very large
+    // files (long videos, archives) are download-only. Starting that transfer
+    // would also keep the file open on the server and block deleting it.
+    if (entry.size > MAX_PREVIEW_BYTES) {
+      setError('This file is too large to preview. Use Download instead.')
+      setLoading(false)
+      return () => { alive = false }
+    }
+    filesApi.preview(entry.path, controller.signal).then(async (blob) => {
       if (!alive) return
       if (type === 'text') setText(await blob.text())
       else { objectUrl = URL.createObjectURL(blob); setUrl(objectUrl) }
     }).catch((err) => { if (alive) setError(getErrorMessage(err, 'Could not load the preview.')) })
       .finally(() => { if (alive) setLoading(false) })
-    return () => { alive = false; if (objectUrl) URL.revokeObjectURL(objectUrl) }
+    // Closing the dialog cancels the transfer instead of letting it run on.
+    return () => { alive = false; controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl) }
   }, [entry, type])
 
   if (!entry) return null
