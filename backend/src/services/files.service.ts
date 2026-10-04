@@ -6,6 +6,7 @@ import { decrypt } from '../utils/encryption'
 import { ApiError } from '../utils/ApiError'
 import { favoriteRepository } from '../repositories/favorite.repository'
 import { toFileEntryDTO, FileEntryDTO, toStorageStatsDTO, StorageStatsDTO } from '../models/file.model'
+import { randomUUID } from 'crypto'
 import { logger } from '../config/logger'
 import { nextcloudService } from './NextcloudService'
 
@@ -43,6 +44,9 @@ function translateWebDavError(err: unknown): never {
       throw ApiError.conflict('A conflicting item already exists at that location')
     }
     if (err.statusCode === 507) throw ApiError.insufficientStorage()
+    if (err.statusCode === 423) {
+      throw new ApiError(423, 'This file is still being processed or is in use. Please try again in a minute.')
+    }
     if (err.statusCode === 413) {
       logger.error({ statusCode: err.statusCode, cause: err.message }, 'Nextcloud rejected the request as too large')
       throw ApiError.badRequest('The storage server rejected this file as too large.')
@@ -64,6 +68,12 @@ function translateWebDavError(err: unknown): never {
   )
   throw ApiError.internal('File storage request failed')
 }
+
+// Size of each piece the browser sends. Small enough that one request
+// finishes quickly on a slow connection (and stays under typical proxy body
+// limits), large enough to stay far below S3's 10,000-part limit even for a
+// 10 GB file. Must stay >= 5 MiB, the minimum S3 part size.
+const UPLOAD_CHUNK_SIZE = 32 * 1024 * 1024
 
 export const filesService = {
   async list(userId: string, rawPath: string | undefined): Promise<(FileEntryDTO & { favorite: boolean })[]> {
@@ -121,9 +131,73 @@ export const filesService = {
     }
   },
 
+  // ---- Chunked uploads ------------------------------------------------
+  async startChunkedUpload(
+    userId: string,
+    rawPath: string | undefined,
+    filename: string
+  ): Promise<{ uploadId: string; chunkSize: number }> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    const uploadId = randomUUID()
+    try {
+      await webDavService.startChunkedUpload(nextcloudUsername, davPassword, uploadId, destination)
+      return { uploadId, chunkSize: UPLOAD_CHUNK_SIZE }
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async uploadChunk(
+    userId: string,
+    uploadId: string,
+    index: number,
+    rawPath: string | undefined,
+    filename: string,
+    totalSize: number,
+    chunkLength: number,
+    data: NodeJS.ReadableStream
+  ): Promise<void> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    try {
+      await webDavService.putUploadChunk(nextcloudUsername, davPassword, uploadId, index, destination, totalSize, chunkLength, data)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async completeChunkedUpload(
+    userId: string,
+    uploadId: string,
+    rawPath: string | undefined,
+    filename: string,
+    totalSize: number
+  ): Promise<FileEntryDTO> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    try {
+      await webDavService.finishChunkedUpload(nextcloudUsername, davPassword, uploadId, destination, totalSize)
+      const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
+      return toFileEntryDTO(stat)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
+  async abortChunkedUpload(userId: string, uploadId: string): Promise<void> {
+    const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+    try {
+      await webDavService.abortChunkedUpload(nextcloudUsername, davPassword, uploadId)
+    } catch (err) {
+      translateWebDavError(err)
+    }
+  },
+
   async download(
     userId: string,
-    rawPath: string
+    rawPath: string,
+    signal?: AbortSignal
   ): Promise<{ stream: NodeJS.ReadableStream; stat: FileEntryDTO }> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     const path = sanitizeDavPath(rawPath)
@@ -132,7 +206,9 @@ export const filesService = {
       if (stat.type === 'directory') {
         throw ApiError.badRequest('Cannot download a folder directly')
       }
-      const stream = await webDavService.downloadStream(nextcloudUsername, davPassword, path)
+      const stream = signal
+        ? await webDavService.downloadStream(nextcloudUsername, davPassword, path, signal)
+        : await webDavService.downloadStream(nextcloudUsername, davPassword, path)
       return { stream, stat: toFileEntryDTO(stat) }
     } catch (err) {
       if (err instanceof ApiError) throw err
@@ -142,14 +218,17 @@ export const filesService = {
 
   async preview(
     userId: string,
-    rawPath: string
+    rawPath: string,
+    signal?: AbortSignal
   ): Promise<{ stream: NodeJS.ReadableStream; stat: FileEntryDTO }> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     const path = sanitizeDavPath(rawPath)
     try {
       const stat = await webDavService.stat(nextcloudUsername, davPassword, path)
       if (stat.type === 'directory') throw ApiError.badRequest('Cannot preview a folder')
-      const stream = await webDavService.downloadStream(nextcloudUsername, davPassword, path)
+      const stream = signal
+        ? await webDavService.downloadStream(nextcloudUsername, davPassword, path, signal)
+        : await webDavService.downloadStream(nextcloudUsername, davPassword, path)
       return { stream, stat: toFileEntryDTO(stat) }
     } catch (err) {
       if (err instanceof ApiError) throw err

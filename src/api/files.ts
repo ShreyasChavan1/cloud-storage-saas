@@ -56,6 +56,80 @@ export const filesApi = {
       .then((r) => r.data.data.entry)
   },
 
+  // Large files are sent as many small requests instead of one huge one, so
+  // no single request runs long enough for a proxy (Railway, Cloudflare...) to
+  // cut it off. The backend streams each piece straight through to Nextcloud,
+  // which stitches them together when we call "complete".
+  uploadChunked: async (
+    path: string | undefined,
+    file: File,
+    onProgress?: (percent: number) => void,
+    signal?: AbortSignal,
+    fileName?: string
+  ) => {
+    const filename = fileName ?? file.name
+    const session = await api.post<{ data: { uploadId: string; chunkSize: number } }>(
+      '/files/upload/session',
+      { path, filename, size: file.size },
+      { signal }
+    )
+    const { uploadId, chunkSize } = session.data.data
+    const totalChunks = Math.ceil(file.size / chunkSize)
+    let sentBytes = 0
+    let completing = false
+
+    try {
+      for (let i = 0; i < totalChunks; i += 1) {
+        const start = i * chunkSize
+        const end = Math.min(start + chunkSize, file.size)
+        const piece = file.slice(start, end)
+
+        // A dropped connection mid-chunk shouldn't throw away the whole
+        // upload — retry just this piece a few times. Re-sending a chunk
+        // simply overwrites it on the server.
+        for (let attempt = 1; ; attempt += 1) {
+          try {
+            await api.put(`/files/upload/session/${uploadId}/chunk/${i + 1}`, piece, {
+              params: { path, filename, size: file.size },
+              headers: { 'Content-Type': 'application/octet-stream' },
+              signal,
+              onUploadProgress: (evt) => {
+                // Hold at 99% until the very last byte is accepted.
+                const done = sentBytes + (evt.loaded ?? 0)
+                onProgress?.(Math.min(99, Math.round((done / file.size) * 100)))
+              },
+            })
+            break
+          } catch (err) {
+            const status = (err as { response?: { status?: number } }).response?.status
+            const retryable = status === undefined || status >= 500 || status === 408 || status === 429
+            if (signal?.aborted || !retryable || attempt >= 3) throw err
+            await new Promise((resolve) => setTimeout(resolve, 1500 * attempt))
+          }
+        }
+
+        sentBytes = end
+        onProgress?.(sentBytes >= file.size ? 100 : Math.min(99, Math.round((sentBytes / file.size) * 100)))
+      }
+
+      completing = true
+      const res = await api.post<{ data: { entry: FileEntry } }>(
+        `/files/upload/session/${uploadId}/complete`,
+        { path, filename, size: file.size },
+        { signal }
+      )
+      return res.data.data.entry
+    } catch (err) {
+      // Clean up the half-finished upload on the server — but never once the
+      // final "assemble" step has started: that request may still be running
+      // on the server even if our connection to it dropped.
+      if (!completing) {
+        void api.delete(`/files/upload/session/${uploadId}`).catch(() => undefined)
+      }
+      throw err
+    }
+  },
+
   // Triggers a real browser download — the backend streams the file bytes,
   // this just turns that response into a saved file rather than returning
   // the blob to the caller.

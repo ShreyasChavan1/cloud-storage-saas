@@ -15,6 +15,10 @@ import {
   versionsSchema,
   restoreVersionSchema,
   trashItemSchema,
+  startChunkedUploadSchema,
+  uploadChunkSchema,
+  completeChunkedUploadSchema,
+  abortChunkedUploadSchema,
 } from '../validators/files.validator'
 
 const router = Router()
@@ -23,6 +27,10 @@ router.use(requireAuth)
 
 router.get('/', validate(listFilesSchema), filesController.list)
 router.post('/upload', validate(uploadFileSchema), uploadMiddleware, filesController.upload)
+router.post('/upload/session', validate(startChunkedUploadSchema), filesController.startUpload)
+router.put('/upload/session/:uploadId/chunk/:index', validate(uploadChunkSchema), filesController.uploadChunk)
+router.post('/upload/session/:uploadId/complete', validate(completeChunkedUploadSchema), filesController.completeUpload)
+router.delete('/upload/session/:uploadId', validate(abortChunkedUploadSchema), filesController.abortUpload)
 router.delete('/', validate(deleteFileSchema), filesController.delete)
 router.get('/trash', filesController.trash)
 router.post('/trash/:id/restore', validate(trashItemSchema), filesController.restoreTrashItem)

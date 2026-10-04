@@ -38,6 +38,25 @@ export class WebDavError extends Error {
   }
 }
 
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+// customRequest() hands back the raw response without checking its status,
+// so every chunked-upload call goes through this to turn 4xx/5xx into the
+// same WebDavError (with a statusCode) the rest of this service throws.
+function assertOk(res: { status: number }, what: string): void {
+  if (res.status >= 400) {
+    const err = new Error(`${what} failed with status ${res.status}`) as Error & { status: number }
+    err.status = res.status
+    throw err
+  }
+}
+
+const encodeDavPath = (path: string) =>
+  path
+    .split('/')
+    .map((segment) => encodeURIComponent(segment))
+    .join('/')
+
 async function clientFor(nextcloudUsername: string, davPassword: string): Promise<WebDAVClient> {
   const { createClient } = await loadWebdav()
   const baseUrl = `${env.NEXTCLOUD_URL}/remote.php/dav/files/${encodeURIComponent(nextcloudUsername)}`
@@ -46,6 +65,23 @@ async function clientFor(nextcloudUsername: string, davPassword: string): Promis
     password: davPassword,
   })
 }
+
+// Nextcloud's chunked-upload API lives under its own DAV root
+// (remote.php/dav/uploads/<user>), separate from the files root above.
+async function uploadsClientFor(nextcloudUsername: string, davPassword: string): Promise<WebDAVClient> {
+  const { createClient } = await loadWebdav()
+  return createClient(`${env.NEXTCLOUD_URL}/remote.php/dav/uploads/${encodeURIComponent(nextcloudUsername)}`, {
+    username: nextcloudUsername,
+    password: davPassword,
+  })
+}
+
+function destinationUrl(nextcloudUsername: string, destinationPath: string): string {
+  return `${env.NEXTCLOUD_URL}/remote.php/dav/files/${encodeURIComponent(nextcloudUsername)}${encodeDavPath(destinationPath)}`
+}
+
+// Chunk names just need to sort in upload order.
+const chunkName = (index: number) => String(index).padStart(5, '0')
 
 // Wraps every WebDAV call so callers get one consistent error type instead
 // of the client library's raw error shape — and so nothing about the
@@ -107,7 +143,12 @@ export const webDavService = {
   async uploadFromFile(nextcloudUsername: string, davPassword: string, path: string, localPath: string, size: number): Promise<void> {
     await run(async () => {
       const client = await clientFor(nextcloudUsername, davPassword)
-      return client.putFileContents(path, createReadStream(localPath) as any, { overwrite: true, contentLength: size })
+      const body = createReadStream(localPath)
+      // An unhandled 'error' event would be an uncaught exception, and
+      // server.ts exits the whole process on those. The failure itself still
+      // surfaces through the rejected PUT below.
+      body.on('error', () => undefined)
+      return client.putFileContents(path, body as any, { overwrite: true, contentLength: size })
     })
   },
 
@@ -119,18 +160,106 @@ export const webDavService = {
   },
 
 
-  // Returns a live readable stream — the controller pipes this directly
-  // into the HTTP response rather than buffering the whole file in memory.
-  async downloadStream(nextcloudUsername: string, davPassword: string, path: string): Promise<Readable> {
-    const client = await clientFor(nextcloudUsername, davPassword)
-    return client.createReadStream(path)
+  // ---- Chunked upload (Nextcloud chunking v2) -------------------------
+  // The browser sends the file as many small requests instead of one huge
+  // one, so no single request runs long enough to hit a proxy time limit.
+  // Chunks are streamed straight through to Nextcloud — nothing is written
+  // to this server's disk or held in memory.
+  async startChunkedUpload(nextcloudUsername: string, davPassword: string, uploadId: string, destinationPath: string): Promise<void> {
+    await run(async () => {
+      const client = await uploadsClientFor(nextcloudUsername, davPassword)
+      const res = await client.customRequest(`/${uploadId}`, {
+        method: 'MKCOL',
+        headers: { Destination: destinationUrl(nextcloudUsername, destinationPath) },
+      } as any)
+      assertOk(res, 'Creating the upload session')
+    })
   },
 
-  async deleteItem(nextcloudUsername: string, davPassword: string, path: string): Promise<void> {
+  async putUploadChunk(
+    nextcloudUsername: string,
+    davPassword: string,
+    uploadId: string,
+    index: number,
+    destinationPath: string,
+    totalSize: number,
+    chunkLength: number,
+    data: NodeJS.ReadableStream
+  ): Promise<void> {
     await run(async () => {
-      const client = await clientFor(nextcloudUsername, davPassword)
-      return client.deleteFile(path)
+      const client = await uploadsClientFor(nextcloudUsername, davPassword)
+      return client.putFileContents(`/${uploadId}/${chunkName(index)}`, data as any, {
+        overwrite: true,
+        contentLength: chunkLength,
+        headers: {
+          'OC-Total-Length': String(totalSize),
+          Destination: destinationUrl(nextcloudUsername, destinationPath),
+        },
+      } as any)
     })
+  },
+
+  // Tells Nextcloud to stitch the chunks together at the destination.
+  async finishChunkedUpload(
+    nextcloudUsername: string,
+    davPassword: string,
+    uploadId: string,
+    destinationPath: string,
+    totalSize: number
+  ): Promise<void> {
+    await run(async () => {
+      const client = await uploadsClientFor(nextcloudUsername, davPassword)
+      const res = await client.customRequest(`/${uploadId}/.file`, {
+        method: 'MOVE',
+        headers: {
+          Destination: destinationUrl(nextcloudUsername, destinationPath),
+          'OC-Total-Length': String(totalSize),
+          Overwrite: 'T',
+        },
+      } as any)
+      assertOk(res, 'Assembling the uploaded file')
+    })
+  },
+
+  async abortChunkedUpload(nextcloudUsername: string, davPassword: string, uploadId: string): Promise<void> {
+    await run(async () => {
+      const client = await uploadsClientFor(nextcloudUsername, davPassword)
+      const res = await client.customRequest(`/${uploadId}`, { method: 'DELETE' } as any)
+      if (res.status !== 404) assertOk(res, 'Cancelling the upload')
+    })
+  },
+
+  // Returns a live readable stream — the controller pipes this directly
+  // into the HTTP response rather than buffering the whole file in memory.
+  async downloadStream(nextcloudUsername: string, davPassword: string, path: string, signal?: AbortSignal): Promise<Readable> {
+    const client = await clientFor(nextcloudUsername, davPassword)
+    // `signal` lets the controller cut the Nextcloud connection when the
+    // browser goes away — otherwise a half-read download keeps the file
+    // locked on the Nextcloud side and later deletes fail with 423.
+    return signal ? client.createReadStream(path, { signal } as any) : client.createReadStream(path)
+  },
+
+  // Nextcloud answers 423 (Locked) while another request still has the file
+  // open — an upload that is finishing, or a download that was interrupted.
+  // Those locks normally clear within seconds, so retry a few times before
+  // giving up instead of failing the delete straight away.
+  async deleteItem(nextcloudUsername: string, davPassword: string, path: string): Promise<void> {
+    const retryDelaysMs = [1000, 2000, 4000]
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        await run(async () => {
+          const client = await clientFor(nextcloudUsername, davPassword)
+          return client.deleteFile(path)
+        })
+        return
+      } catch (err) {
+        if (err instanceof WebDavError && err.statusCode === 423 && attempt < retryDelaysMs.length) {
+          await sleep(retryDelaysMs[attempt])
+          continue
+        }
+        throw err
+      }
+    }
   },
 
   async move(nextcloudUsername: string, davPassword: string, fromPath: string, toPath: string): Promise<void> {

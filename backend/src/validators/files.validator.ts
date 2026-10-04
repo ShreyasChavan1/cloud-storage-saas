@@ -77,3 +77,41 @@ export const favoriteFileSchema = z.object({
 })
 export const versionsSchema=z.object({query:z.object({path:z.string().min(1)})})
 export const restoreVersionSchema=z.object({body:z.object({path:z.string().min(1),revision:z.string().regex(/^\d+$/)})})
+
+// ---- Chunked uploads ----------------------------------------------------
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
+const uploadIdField = z.string().regex(/^[0-9a-fA-F-]{36}$/, 'Invalid upload id')
+const uploadSizeField = z.number().int().positive().max(MAX_UPLOAD_BYTES, 'File is too large')
+
+export const startChunkedUploadSchema = z.object({
+  body: z.object({
+    path: z.string().optional(),
+    filename: nameField,
+    size: uploadSizeField,
+  }),
+})
+
+export const uploadChunkSchema = z.object({
+  params: z.object({
+    uploadId: uploadIdField,
+    index: z.coerce.number().int().min(1).max(10000),
+  }),
+  query: z.object({
+    path: z.string().optional(),
+    filename: nameField,
+    size: z.coerce.number().int().positive().max(MAX_UPLOAD_BYTES),
+  }),
+})
+
+export const completeChunkedUploadSchema = z.object({
+  params: z.object({ uploadId: uploadIdField }),
+  body: z.object({
+    path: z.string().optional(),
+    filename: nameField,
+    size: uploadSizeField,
+  }),
+})
+
+export const abortChunkedUploadSchema = z.object({
+  params: z.object({ uploadId: uploadIdField }),
+})

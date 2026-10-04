@@ -18,6 +18,7 @@ import { ApiError } from '../utils/ApiError'
 // matches the 10G client_max_body_size on the Nextcloud nginx.
 const UPLOAD_TMP_DIR = path.join(os.tmpdir(), 'nimbus-uploads')
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
+const MAX_CHUNK_BYTES = 128 * 1024 * 1024
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -31,6 +32,19 @@ const upload = multer({
 })
 
 export const uploadMiddleware = upload.single('file')
+
+// If the browser closes a download/preview half-way (closing the preview
+// dialog, navigating away), stop reading from Nextcloud too. Left alone, that
+// connection stays open and Nextcloud keeps the file locked, which is what
+// made later deletes fail with "423 Locked".
+function closeUpstreamWhenClientLeaves(res: Response, stream: NodeJS.ReadableStream, abort: AbortController) {
+  res.on('close', () => {
+    if (res.writableFinished) return
+    abort.abort()
+    const destroyable = stream as unknown as { destroy?: () => void }
+    destroyable.destroy?.()
+  })
+}
 
 export const filesController = {
   list: asyncHandler(async (req: Request, res: Response) => {
@@ -58,8 +72,46 @@ export const filesController = {
     }
   }),
 
+  // ---- Chunked upload ---------------------------------------------------
+  // POST /files/upload/session -> { uploadId, chunkSize }
+  startUpload: asyncHandler(async (req: Request, res: Response) => {
+    const { path, filename } = req.body as { path?: string; filename: string; size: number }
+    const session = await filesService.startChunkedUpload(req.user!.sub, path, filename)
+    return sendSuccess(res, session, 201)
+  }),
+
+  // PUT /files/upload/session/:uploadId/chunk/:index — raw bytes in the body
+  uploadChunk: asyncHandler(async (req: Request, res: Response) => {
+    const chunkLength = Number(req.headers['content-length'])
+    if (!Number.isFinite(chunkLength) || chunkLength <= 0 || chunkLength > MAX_CHUNK_BYTES) {
+      throw ApiError.badRequest('Chunk must have a Content-Length between 1 byte and 128 MB')
+    }
+    // See the note in WebDavService.uploadFromFile: an unhandled stream error
+    // would otherwise crash the whole process.
+    req.on('error', () => undefined)
+    const { uploadId, index } = req.params as unknown as { uploadId: string; index: number }
+    const { path, filename, size } = req.query as unknown as { path?: string; filename: string; size: number }
+    await filesService.uploadChunk(req.user!.sub, uploadId, Number(index), path, filename, Number(size), chunkLength, req)
+    return sendSuccess(res, { received: Number(index) })
+  }),
+
+  // POST /files/upload/session/:uploadId/complete
+  completeUpload: asyncHandler(async (req: Request, res: Response) => {
+    const { path, filename, size } = req.body as { path?: string; filename: string; size: number }
+    const entry = await filesService.completeChunkedUpload(req.user!.sub, req.params.uploadId, path, filename, size)
+    return sendSuccess(res, { entry }, 201)
+  }),
+
+  // DELETE /files/upload/session/:uploadId
+  abortUpload: asyncHandler(async (req: Request, res: Response) => {
+    await filesService.abortChunkedUpload(req.user!.sub, req.params.uploadId)
+    return sendSuccess(res, { aborted: true })
+  }),
+
   download: asyncHandler(async (req: Request, res: Response) => {
-    const { stream, stat } = await filesService.download(req.user!.sub, req.query.path as string)
+    const abort = new AbortController()
+    const { stream, stat } = await filesService.download(req.user!.sub, req.query.path as string, abort.signal)
+    closeUpstreamWhenClientLeaves(res, stream, abort)
 
     res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
     const safeAsciiName = stat.name.replace(/[\\"\r\n]/g, '_').replace(/[^\x20-\x7E]/g, '_') || 'download'
@@ -76,7 +128,9 @@ export const filesController = {
   }),
 
   preview: asyncHandler(async (req: Request, res: Response) => {
-    const { stream, stat } = await filesService.preview(req.user!.sub, req.query.path as string)
+    const abort = new AbortController()
+    const { stream, stat } = await filesService.preview(req.user!.sub, req.query.path as string, abort.signal)
+    closeUpstreamWhenClientLeaves(res, stream, abort)
     res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
     res.setHeader('Content-Disposition', 'inline')
     res.setHeader('X-Content-Type-Options', 'nosniff')

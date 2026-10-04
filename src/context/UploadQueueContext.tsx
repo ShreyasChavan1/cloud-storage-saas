@@ -54,6 +54,9 @@ const MAX_CONCURRENT = 3
 // long enough to notice, short enough not to clutter. Errors/cancellations
 // stay until the person dismisses or retries them.
 const SUCCESS_REMOVE_DELAY_MS = 2500
+// Files bigger than this are sent in chunks (see filesApi.uploadChunked)
+// instead of as one request. Smaller files keep the simple single-request path.
+const CHUNKED_UPLOAD_THRESHOLD = 64 * 1024 * 1024
 
 let nextId = 0
 const makeId = () => `up_${nextId++}`
@@ -82,6 +85,45 @@ export function uniqueName(base: string, taken: Set<string>): string {
 // (network blip, timeout, 5xx) is worth a genuine retry.
 function isRetryableStatus(status: number | undefined): boolean {
   return status !== 400 && status !== 409
+}
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+// A large upload can finish on the server while the browser still gets an
+// error back (a proxy timing out on the response, a dropped connection...).
+// Before showing "failed", look in the destination folder: if the file is
+// there with the right size and was written during this upload, it worked.
+// When every byte had been sent, keep checking for up to a minute — the server
+// may still be assembling the file.
+async function wasActuallyUploaded(
+  record: { file: File; targetPath: string | undefined; uploadName: string },
+  startedAt: number,
+  err: unknown,
+  lastPercent: number
+): Promise<boolean> {
+  if (!(err instanceof AxiosError)) return false
+  const status = err.response?.status
+  const ambiguous = !err.response || status === 500 || status === 502 || status === 503 || status === 504 || status === 408
+  if (!ambiguous) return false
+
+  const attempts = lastPercent >= 100 ? 12 : 1
+  for (let i = 0; i < attempts; i += 1) {
+    if (i > 0) await sleep(5000)
+    try {
+      const entries = await filesApi.list(record.targetPath)
+      const found = entries.find(
+        (e) =>
+          e.type === 'file' &&
+          e.name === record.uploadName &&
+          e.size === record.file.size &&
+          Date.parse(e.modifiedAt) >= startedAt - 5 * 60 * 1000
+      )
+      if (found) return true
+    } catch {
+      // can't check right now — fall through and keep the original error
+    }
+  }
+  return false
 }
 
 interface InternalFileRecord {
@@ -181,20 +223,31 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
       record.controller = controller
       patchEntry(id, { status: 'uploading', percent: 0, error: undefined })
 
-      try {
-        await filesApi.upload(
-          record.targetPath,
-          record.file,
-          (percent) => patchEntry(id, { percent }),
-          controller.signal,
-          record.uploadName
-        )
+      const startedAt = Date.now()
+      let lastPercent = 0
+      const onProgress = (percent: number) => {
+        lastPercent = percent
+        patchEntry(id, { percent })
+      }
+      const markSuccess = () => {
         patchEntry(id, { status: 'success', percent: 100 })
         invalidateFolder(record.targetPath)
         setTimeout(() => removeEntry(id), SUCCESS_REMOVE_DELAY_MS)
+      }
+
+      try {
+        if (record.file.size > CHUNKED_UPLOAD_THRESHOLD) {
+          await filesApi.uploadChunked(record.targetPath, record.file, onProgress, controller.signal, record.uploadName)
+        } else {
+          await filesApi.upload(record.targetPath, record.file, onProgress, controller.signal, record.uploadName)
+        }
+        markSuccess()
       } catch (err) {
         if (controller.signal.aborted) {
           patchEntry(id, { status: 'canceled', retryable: true })
+        } else if (await wasActuallyUploaded(record, startedAt, err, lastPercent)) {
+          // The error was only about the response getting lost — the file is there.
+          markSuccess()
         } else {
           const status = err instanceof AxiosError ? err.response?.status : undefined
           patchEntry(id, {
