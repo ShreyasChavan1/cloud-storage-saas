@@ -43,9 +43,19 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 // customRequest() hands back the raw response without checking its status,
 // so every chunked-upload call goes through this to turn 4xx/5xx into the
 // same WebDavError (with a statusCode) the rest of this service throws.
-function assertOk(res: { status: number }, what: string): void {
+async function assertOk(res: { status: number; text?: () => Promise<string> }, what: string): Promise<void> {
   if (res.status >= 400) {
-    const err = new Error(`${what} failed with status ${res.status}`) as Error & { status: number }
+    // Nextcloud explains a rejection in the XML body (<s:message>...). Pull
+    // that out so logs say WHY, not just the status code.
+    let detail = ''
+    try {
+      const body = (await res.text?.()) ?? ''
+      const match = /<s:message>([^<]*)<\/s:message>/.exec(body)
+      detail = (match ? match[1] : body).replace(/\s+/g, ' ').trim().slice(0, 300)
+    } catch {
+      // body unreadable — the status code alone will have to do
+    }
+    const err = new Error(`${what} failed with status ${res.status}${detail ? `: ${detail}` : ''}`) as Error & { status: number }
     err.status = res.status
     throw err
   }
@@ -172,7 +182,7 @@ export const webDavService = {
         method: 'MKCOL',
         headers: { Destination: destinationUrl(nextcloudUsername, destinationPath) },
       } as any)
-      assertOk(res, 'Creating the upload session')
+      await assertOk(res, 'Creating the upload session')
     })
   },
 
@@ -217,7 +227,7 @@ export const webDavService = {
           Overwrite: 'T',
         },
       } as any)
-      assertOk(res, 'Assembling the uploaded file')
+      await assertOk(res, 'Assembling the uploaded file')
     })
   },
 
@@ -225,7 +235,7 @@ export const webDavService = {
     await run(async () => {
       const client = await uploadsClientFor(nextcloudUsername, davPassword)
       const res = await client.customRequest(`/${uploadId}`, { method: 'DELETE' } as any)
-      if (res.status !== 404) assertOk(res, 'Cancelling the upload')
+      if (res.status !== 404) await assertOk(res, 'Cancelling the upload')
     })
   },
 
