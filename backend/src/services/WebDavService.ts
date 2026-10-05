@@ -322,9 +322,14 @@ export const webDavService = {
   // location, or purge one permanently.
   async listTrash(u:string,p:string){return run(async()=>{const {createClient}=await loadWebdav();const base=`${env.NEXTCLOUD_URL}/remote.php/dav/trashbin/${encodeURIComponent(u)}`;const c=createClient(base,{username:u,password:p});const r=await c.customRequest('/trash/',{method:'PROPFIND',headers:{Depth:'1','Content-Type':'application/xml'},data:'<?xml version="1.0"?><d:propfind xmlns:d="DAV:" xmlns:oc="http://owncloud.org/ns"><d:prop><d:displayname/><d:getcontentlength/><d:getlastmodified/><d:resourcetype/><oc:trashbin-original-location/><oc:trashbin-deletion-time/></d:prop></d:propfind>'} as any);const x=await r.text();return [...x.matchAll(/<[^:>]*:response[^>]*>([\s\S]*?)<\/[^:>]*:response>/gi)].map(m=>{const q=m[1];const h=q.match(/<[^:>]*:href[^>]*>([\s\S]*?)<\/[^:>]*:href>/i)?.[1]||'';const id=decodeURIComponent(h.replace(/\/+$/,'').split('/').pop()||'');const isFolder=/<[^:>]*:collection\b/i.test(q);return {id,name:q.match(/<[^:>]*:displayname[^>]*>([\s\S]*?)<\/[^:>]*:displayname>/i)?.[1]||id,originalLocation:q.match(/<[^:>]*:trashbin-original-location[^>]*>([\s\S]*?)<\/[^:>]*:trashbin-original-location>/i)?.[1]||'',deletedAt:q.match(/<[^:>]*:trashbin-deletion-time[^>]*>([\s\S]*?)<\/[^:>]*:trashbin-deletion-time>/i)?.[1]||'',type:(isFolder?'folder':'file') as 'file'|'folder',size:Number(q.match(/<[^:>]*:getcontentlength[^>]*>([\s\S]*?)<\/[^:>]*:getcontentlength>/i)?.[1]||0)}}).filter(v=>v.id && v.id!=='trash')})},
 
-  async restoreTrashItem(u:string,p:string,id:string){await run(async()=>{const {createClient}=await loadWebdav();const base=`${env.NEXTCLOUD_URL}/remote.php/dav/trashbin/${encodeURIComponent(u)}`;const c=createClient(base,{username:u,password:p});await c.customRequest(`/trash/${encodeURIComponent(id)}`,{method:'MOVE',headers:{Destination:`${base}/restore/${encodeURIComponent(id)}`}} as any)})},
+  // NOTE: customRequest() URL-encodes the path it is given, so the trash id is
+  // passed as-is below. Encoding it here too double-encoded names containing
+  // spaces or brackets ("a b.mkv" -> "a%2520b.mkv") and Nextcloud answered 404.
+  // The Destination header is NOT touched by the library, so that one stays
+  // encoded.
+  async restoreTrashItem(u:string,p:string,id:string){await run(async()=>{const {createClient}=await loadWebdav();const base=`${env.NEXTCLOUD_URL}/remote.php/dav/trashbin/${encodeURIComponent(u)}`;const c=createClient(base,{username:u,password:p});await c.customRequest(`/trash/${id}`,{method:'MOVE',headers:{Destination:`${base}/restore/${encodeURIComponent(id)}`}} as any)})},
 
-  async deleteTrashItem(u:string,p:string,id:string){await run(async()=>{const {createClient}=await loadWebdav();const base=`${env.NEXTCLOUD_URL}/remote.php/dav/trashbin/${encodeURIComponent(u)}`;const c=createClient(base,{username:u,password:p});await c.customRequest(`/trash/${encodeURIComponent(id)}`,{method:'DELETE'} as any)})},
+  async deleteTrashItem(u:string,p:string,id:string){await run(async()=>{const {createClient}=await loadWebdav();const base=`${env.NEXTCLOUD_URL}/remote.php/dav/trashbin/${encodeURIComponent(u)}`;const c=createClient(base,{username:u,password:p});await c.customRequest(`/trash/${id}`,{method:'DELETE'} as any)})},
 
   async getQuota(
     nextcloudUsername: string,
