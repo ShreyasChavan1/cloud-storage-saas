@@ -27,7 +27,7 @@ const reviews = [
   {
     name: "Priya Nair",
     role: "Interior designer",
-    text: "I keep all client drawings and project photos in Nimbus. Finding a file from my phone while on site takes seconds.",
+    text: "I keep all client drawings and project photos in DVT cloud. Finding a file from my phone while on site takes seconds.",
   },
   {
     name: "Amit Kulkarni",
@@ -193,7 +193,7 @@ const Home = () => {
                       <span className="h-2.5 w-2.5 rounded-full bg-[#D7D2C8]" />
                       <span className="h-2.5 w-2.5 rounded-full bg-[#D7D2C8]" />
                       <div className="ml-4 flex h-6 max-w-md flex-1 items-center rounded-md border border-[#E4DED4] bg-white px-3 text-[11px] text-[#85847E]">
-                        nimbus.dvtechnologies.in/dashboard
+                      https://dv-technologies.in/dashboard
                       </div>
                     </div>
 

@@ -46,7 +46,7 @@ export default function MobileApp() {
       <div>
         <h1 className="text-xl font-semibold text-ink-900 dark:text-white">Mobile App</h1>
         <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
-          Access your Nimbus files from your phone using the official Nextcloud app — your storage
+          Access your files from your phone using the official Nextcloud app — your storage
           runs on Nextcloud under the hood, so the real Nextcloud app connects to it directly.
         </p>
       </div>
@@ -86,7 +86,7 @@ export default function MobileApp() {
           <div>
             <div className="text-xs font-medium text-ink-500 dark:text-ink-400">Password</div>
             <p className="mt-1 rounded-lg border border-line bg-surface-50 px-3 py-2 text-sm dark:border-dark-border dark:bg-dark-surface2">
-              Use your regular Nimbus account password — the one you log into this site with.
+              Use your regular DVT account password — the one you log into this site with.
             </p>
           </div>
         </div>
