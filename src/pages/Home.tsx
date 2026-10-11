@@ -100,6 +100,9 @@ const Home = () => {
             <a href="#features" className="transition hover:text-[#D86520]">
               Features
             </a>
+            <a href="#services" className="transition hover:text-[#D86520]">
+              Services
+            </a>
             <a href="#cctv" className="transition hover:text-[#D86520]">
               CCTV Backup
             </a>
@@ -150,11 +153,10 @@ const Home = () => {
                 </div>
 
                 <h1 className="max-w-3xl text-4xl font-semibold leading-[1.06] tracking-[-0.035em] !text-[#132A4E] sm:text-5xl lg:text-[3.7rem]">
-                  Secure cloud storage
+                  Secure cloud storage and{" "}
                   <br />
-                  for your files and{" "}
                   <span className="text-[#D86520]">
-                    CCTV & NVR recordings.
+                    Digital Services.
                   </span>
                 </h1>
 
@@ -165,13 +167,23 @@ const Home = () => {
                 </p>
 
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                  <Link
-                    to="/register"
-                    className="inline-flex items-center justify-center gap-2 rounded-md bg-[#E8792B] px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#C9631D]"
-                  >
-                    Start storing securely
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
+                  <div className="flex flex-col items-start gap-3">
+                    <Link
+                      to="/register"
+                      className="inline-flex items-center justify-center gap-2 rounded-md bg-[#E8792B] px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#C9631D]"
+                    >
+                      Start storing securely
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+
+                    <Link
+                      to="/client-requirement-form"
+                      className="inline-flex items-center gap-2 px-1 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                    >
+                      See other services
+                      <ArrowRight className="h-4 w-4" />
+                    </Link>
+                  </div>
 
                   <a
                     href="#how-it-works"
@@ -340,6 +352,56 @@ const Home = () => {
                 </div>
               );
             })}
+          </div>
+        </section>
+
+        {/* Managed Digital Services */}
+        <section id="services" className="border-b border-[#DDD6C8] bg-[#F8F5EF]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="max-w-3xl">
+              <div className="mb-5 text-xs font-semibold uppercase tracking-[0.12em] text-[#D86520]">
+                Managed Digital Services
+              </div>
+              <h2 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                From idea to delivery, with one coordination point.
+              </h2>
+              <p className="mt-5 max-w-3xl leading-7 !text-[#62645F]">
+                DVT can manage selected digital requirements from planning to delivery.
+                Where specialist skills are required, suitable professionals can be
+                coordinated under a defined project scope while DVT remains the
+                client’s primary coordination point.
+              </p>
+            </div>
+
+            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+              {[
+                ["Website & Web Solutions", "Business websites, portfolio sites, portals and custom web requirements."],
+                ["Mobile App Solutions", "Mobile applications developed around approved features and user needs."],
+                ["Social Media Management", "Page setup, content coordination, posting support and ongoing account handling."],
+                ["Digital Advertising", "Campaign planning and coordination for selected online and social platforms."],
+                ["Professional Digital Presence", "Business profiles, digital assets and online presence setup."],
+                ["Maintenance & Support", "Ongoing support for websites, applications and selected digital services."],
+                ["Custom Managed Digital Solutions", "Projects combining web, cloud, hosting, databases, APIs, integrations and ongoing support."],
+              ].map(([title, description]) => (
+                <div
+                  key={title}
+                  className="border border-[#D8D0C1] bg-white p-6 transition hover:border-[#E8792B]/60"
+                >
+                  <h3 className="text-lg font-semibold !text-[#132A4E]">{title}</h3>
+                  <p className="mt-3 leading-7 !text-[#62645F]">{description}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-9">
+              <Link
+                to="/client-requirement-form"
+                className="inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+              >
+                Discuss your requirement
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+            </div>
           </div>
         </section>
 
@@ -807,6 +869,13 @@ const Home = () => {
               <h3 className="text-sm font-semibold text-white">Company</h3>
 
               <div className="mt-4 space-y-3 text-sm text-[#BFC9D7]">
+                <a
+                  href="#services"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  Managed Digital Services
+                </a>
+
                 <Link
                   to="/company-profile"
                   className="block transition hover:text-[#F29A58]"
