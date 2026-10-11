@@ -16,8 +16,6 @@ import {
   Folder,
   Star,
 } from "lucide-react";
-import { supportApi, SupportContact } from "@/api/support";
-
 const reviews = [
   {
     name: "Rohan Mehta",
@@ -60,20 +58,6 @@ const ReviewStars = () => (
 );
 
 const Home = () => {
-  const [contact, setContact] = useState<SupportContact | null>(null);
-  const [contactFailed, setContactFailed] = useState(false);
-
-  useEffect(() => {
-    supportApi
-      .getContact()
-      .then(setContact)
-      // Without this, any failed fetch (a real bug on the backend's auth
-      // requirement, or just a transient network hiccup) left this stuck
-      // on "Loading..." forever, since nothing ever set `contact` to
-      // anything else. Now it fails visibly instead of silently.
-      .catch(() => setContactFailed(true));
-  }, []);
-
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8F5EF] text-[#17233A]">
       {/* Navigation */}
@@ -153,8 +137,9 @@ const Home = () => {
                 </div>
 
                 <h1 className="max-w-3xl text-4xl font-semibold leading-[1.06] tracking-[-0.035em] !text-[#132A4E] sm:text-5xl lg:text-[3.7rem]">
-                  Secure cloud storage and{" "}
+                  Secure File, CCTV & NVR Storage,
                   <br />
+                  {" "}
                   <span className="text-[#D86520]">
                     Digital Services.
                   </span>
@@ -170,7 +155,7 @@ const Home = () => {
                   <div className="flex flex-col items-start gap-3">
                     <Link
                       to="/register"
-                      className="inline-flex items-center justify-center gap-2 rounded-md bg-[#E8792B] px-6 py-3.5 text-sm font-semibold text-white shadow-sm transition hover:bg-[#C9631D]"
+                      className="inline-flex items-center justify-center gap-2 rounded-md !bg-[#E8792B] px-6 py-3.5 text-sm font-semibold !text-white shadow-sm transition hover:!bg-[#C9631D]"
                     >
                       Start storing securely
                       <ArrowRight className="h-4 w-4" />
@@ -178,7 +163,7 @@ const Home = () => {
 
                     <Link
                       to="/client-requirement-form"
-                      className="inline-flex items-center gap-2 px-1 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                      className="inline-flex items-center justify-center gap-2 rounded-md !bg-[#E8792B] px-6 py-3.5 text-sm font-semibold !text-white shadow-sm transition hover:!bg-[#C9631D]"
                     >
                       See other services
                       <ArrowRight className="h-4 w-4" />
@@ -355,56 +340,6 @@ const Home = () => {
           </div>
         </section>
 
-        {/* Managed Digital Services */}
-        <section id="services" className="border-b border-[#DDD6C8] bg-[#F8F5EF]">
-          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
-            <div className="max-w-3xl">
-              <div className="mb-5 text-xs font-semibold uppercase tracking-[0.12em] text-[#D86520]">
-                Managed Digital Services
-              </div>
-              <h2 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
-                From idea to delivery, with one coordination point.
-              </h2>
-              <p className="mt-5 max-w-3xl leading-7 !text-[#62645F]">
-                DVT can manage selected digital requirements from planning to delivery.
-                Where specialist skills are required, suitable professionals can be
-                coordinated under a defined project scope while DVT remains the
-                client’s primary coordination point.
-              </p>
-            </div>
-
-            <div className="mt-12 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-              {[
-                ["Website & Web Solutions", "Business websites, portfolio sites, portals and custom web requirements."],
-                ["Mobile App Solutions", "Mobile applications developed around approved features and user needs."],
-                ["Social Media Management", "Page setup, content coordination, posting support and ongoing account handling."],
-                ["Digital Advertising", "Campaign planning and coordination for selected online and social platforms."],
-                ["Professional Digital Presence", "Business profiles, digital assets and online presence setup."],
-                ["Maintenance & Support", "Ongoing support for websites, applications and selected digital services."],
-                ["Custom Managed Digital Solutions", "Projects combining web, cloud, hosting, databases, APIs, integrations and ongoing support."],
-              ].map(([title, description]) => (
-                <div
-                  key={title}
-                  className="border border-[#D8D0C1] bg-white p-6 transition hover:border-[#E8792B]/60"
-                >
-                  <h3 className="text-lg font-semibold !text-[#132A4E]">{title}</h3>
-                  <p className="mt-3 leading-7 !text-[#62645F]">{description}</p>
-                </div>
-              ))}
-            </div>
-
-            <div className="mt-9">
-              <Link
-                to="/client-requirement-form"
-                className="inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
-              >
-                Discuss your requirement
-                <ArrowRight className="h-4 w-4" />
-              </Link>
-            </div>
-          </div>
-        </section>
-
         {/* Cloud Storage */}
         <section className="mx-auto max-w-7xl px-6 py-24 lg:px-8 lg:py-28">
           <div className="grid items-center gap-16 lg:grid-cols-2">
@@ -471,6 +406,312 @@ const Home = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Managed Digital Services */}
+        <section id="services" className="border-y border-[#DDD6C8] bg-[#F8F5EF]">
+          <div className="mx-auto max-w-7xl px-6 py-24 lg:px-8 lg:py-28">
+            <div className="max-w-3xl">
+              <div className="mb-5 text-xs font-semibold uppercase tracking-[0.12em] text-[#D86520]">
+                Managed Digital Services
+              </div>
+              <h2 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl lg:text-5xl">
+                Digital services beyond storage.
+              </h2>
+              <p className="mt-5 max-w-3xl text-base leading-7 !text-[#62645F] sm:text-lg">
+                DVT can take responsibility for selected digital requirements from
+                planning through delivery. Each project is scoped around the actual
+                requirement, with DVT acting as the primary coordination point.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        {/* Website & Web Solutions */}
+        <section className="border-b border-[#DDD6C8] bg-[#FFFDF9]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
+              <div>
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">01</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Website & Web Solutions
+                </h3>
+              </div>
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Business websites, portfolio sites, landing pages, portals and
+                  custom web platforms built around the client’s goals, audience
+                  and operational requirements.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#DDD6C8] pt-6 sm:grid-cols-2">
+                  {[
+                    "Business and company websites",
+                    "Portfolio and service websites",
+                    "Landing pages and campaign sites",
+                    "Custom portals and web applications",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss a web project
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Mobile App Solutions */}
+        <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
+              <div className="lg:order-1">
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Mobile applications developed around approved features and real
+                  user needs, with support across interface development, backend
+                  integration and deployment.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#D8D0C1] pt-6 sm:grid-cols-2">
+                  {[
+                    "Android and cross-platform applications",
+                    "User interface and application flows",
+                    "API and backend integration",
+                    "Deployment and post-launch support",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss an app project
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="lg:order-2 lg:text-right">
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">02</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Mobile App Solutions
+                </h3>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Social Media Management */}
+        <section className="border-b border-[#DDD6C8] bg-[#FFFDF9]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
+              <div>
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">03</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Social Media Management
+                </h3>
+              </div>
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Page setup, content coordination, posting support and ongoing
+                  account handling across selected social platforms, based on the
+                  client’s approved content and communication requirements.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#DDD6C8] pt-6 sm:grid-cols-2">
+                  {[
+                    "Business page and profile setup",
+                    "Content and posting coordination",
+                    "Routine account management",
+                    "Platform-specific publishing support",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss social media support
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Digital Advertising */}
+        <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Campaign planning, audience targeting and coordination for selected
+                  online and social platforms, with support for ongoing advertising
+                  requirements.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#D8D0C1] pt-6 sm:grid-cols-2">
+                  {[
+                    "Campaign planning and setup",
+                    "Audience and platform coordination",
+                    "Creative and content coordination",
+                    "Ongoing campaign support",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss advertising requirements
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="text-left lg:text-right">
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">04</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Digital Advertising
+                </h3>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Professional Digital Presence */}
+        <section className="border-b border-[#DDD6C8] bg-[#FFFDF9]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
+              <div>
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">05</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Professional Digital Presence
+                </h3>
+              </div>
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Business profiles, digital assets, listings and online presence
+                  setup that help create a consistent and professional identity
+                  across the channels a business uses.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#DDD6C8] pt-6 sm:grid-cols-2">
+                  {[
+                    "Business profile setup",
+                    "Digital asset organization",
+                    "Online listings and presence",
+                    "Consistent contact and brand information",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Build your digital presence
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Maintenance & Support */}
+        <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Ongoing support for websites, applications and selected digital
+                  services, including updates, troubleshooting, content changes
+                  and routine assistance.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#D8D0C1] pt-6 sm:grid-cols-2">
+                  {[
+                    "Website and application updates",
+                    "Troubleshooting and issue resolution",
+                    "Content and configuration changes",
+                    "Routine technical assistance",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss maintenance and support
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
+              </div>
+              <div className="text-left lg:text-right">
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">06</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Maintenance & Support
+                </h3>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Custom Managed Digital Solutions */}
+        <section className="border-b border-[#DDD6C8] bg-[#FFFDF9]">
+          <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
+            <div className="grid items-start gap-12 lg:grid-cols-[0.8fr_1.2fr] lg:gap-20">
+              <div>
+                <div className="mb-5 text-sm font-semibold text-[#D86520]">07</div>
+                <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                  Custom Managed Digital Solutions
+                </h3>
+              </div>
+              <div>
+                <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
+                  Projects combining web, cloud, hosting, databases, APIs,
+                  integrations, automation and ongoing support, coordinated around
+                  a defined project scope.
+                </p>
+                <div className="mt-8 grid gap-x-10 gap-y-4 border-t border-[#DDD6C8] pt-6 sm:grid-cols-2">
+                  {[
+                    "Multi-service digital projects",
+                    "Cloud and hosting coordination",
+                    "API and system integrations",
+                    "Automation and ongoing management",
+                  ].map((item) => (
+                    <div key={item} className="flex items-start gap-3 text-sm !text-[#62645F]">
+                      <Check className="mt-0.5 h-4 w-4 shrink-0 text-[#D86520]" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+                <Link
+                  to="/client-requirement-form"
+                  className="mt-8 inline-flex items-center gap-2 text-sm font-semibold text-[#D86520] transition hover:text-[#A94F17]"
+                >
+                  Discuss a custom project
+                  <ArrowRight className="h-4 w-4" />
+                </Link>
               </div>
             </div>
           </div>
@@ -906,14 +1147,14 @@ const Home = () => {
                 <div>
                   <div className="text-[#8FA0B8]">Owner Email</div>
                   <div className="mt-1 text-white">
-                    {contact?.email ?? (contactFailed ? "Unavailable" : "Loading...")}
+                    dvtechnologies2026@gmail.com
                   </div>
                 </div>
 
                 <div>
                   <div className="text-[#8FA0B8]">Phone</div>
                   <div className="mt-1 text-white">
-                    {contact?.phone ?? (contactFailed ? "Unavailable" : "Loading...")}
+                    9665579916
                   </div>
                 </div>
               </div>
