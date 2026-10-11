@@ -33,6 +33,8 @@ const testUser = {
   email: `test-${Date.now()}@example.com`,
   phoneNumber: '+919876543210',
   password: 'TestPassword123!',
+  acceptedAgreement: true,
+  agreementVersion: '1.0',
 }
 
 beforeAll(() => {
@@ -60,12 +62,45 @@ describe('Auth flow', () => {
     verificationToken = res.body.data.devToken
   })
 
+  it('records the agreement acceptance for the new account', async () => {
+    const user = await prisma.user.findUnique({
+      where: { email: testUser.email },
+      include: { agreementAcceptances: true },
+    })
+    expect(user?.agreementAcceptances).toHaveLength(1)
+    expect(user?.agreementAcceptances[0]).toMatchObject({
+      agreementVersion: '1.0',
+      email: testUser.email,
+      event: 'REGISTRATION',
+    })
+  })
+
   it('verifies the email before login is allowed', async () => {
     expect(verificationToken).toBeDefined()
     const res = await request(app).post('/api/auth/verify-email').send({ token: verificationToken })
     expect(res.status).toBe(200)
     expect(res.body.data.accessToken).toBeDefined()
     expect(res.body.data.user.emailVerified).toBe(true)
+  })
+
+  it('rejects registration when the agreement is not accepted', async () => {
+    const { acceptedAgreement: _omit, ...withoutAcceptance } = testUser
+    const missing = await request(app)
+      .post('/api/auth/register')
+      .send({ ...withoutAcceptance, email: `no-accept-${Date.now()}@example.com` })
+    expect(missing.status).toBe(400)
+
+    const declined = await request(app)
+      .post('/api/auth/register')
+      .send({ ...testUser, acceptedAgreement: false, email: `declined-${Date.now()}@example.com` })
+    expect(declined.status).toBe(400)
+  })
+
+  it('rejects registration against a stale agreement version', async () => {
+    const res = await request(app)
+      .post('/api/auth/register')
+      .send({ ...testUser, agreementVersion: '0.9', email: `stale-${Date.now()}@example.com` })
+    expect(res.status).toBe(400)
   })
 
   it('rejects duplicate registration', async () => {

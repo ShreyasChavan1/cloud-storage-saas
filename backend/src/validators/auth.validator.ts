@@ -17,6 +17,13 @@ export const registerSchema = z.object({
     email: emailField,
     phoneNumber: phoneField,
     password: passwordField,
+    // Enforced here, not just in the UI: the Service Agreement says the
+    // acceptance checkbox must be required before account creation, so a
+    // client that skips the form (curl, a modified bundle) is rejected too.
+    acceptedAgreement: z.literal(true, {
+      errorMap: () => ({ message: 'You must accept the Service Agreement to create an account' }),
+    }),
+    agreementVersion: z.string().trim().min(1, 'Agreement version is required').max(20),
   }),
 })
 

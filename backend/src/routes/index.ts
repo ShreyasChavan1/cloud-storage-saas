@@ -7,6 +7,7 @@ import paymentRoutes from './payment.routes'
 import cctvRoutes from './cctv.routes'
 import shareRoutes from './share.routes'
 import supportRoutes from './support.routes'
+import clientFormRoutes from './clientForm.routes'
 
 const router = Router()
 
@@ -22,5 +23,6 @@ router.use('/payments', paymentRoutes)
 router.use('/cctv', cctvRoutes)
 router.use('/shares', shareRoutes)
 router.use('/support', supportRoutes)
+router.use('/client-forms', clientFormRoutes)
 
 export default router

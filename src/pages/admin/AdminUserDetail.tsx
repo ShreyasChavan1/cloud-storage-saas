@@ -33,6 +33,7 @@ import { useSetUserStatus, useDeleteUser, useSetUserQuota, useRevokeSession } fr
 import { useToast } from '@/context/ToastContext'
 import { getErrorMessage } from '@/lib/getErrorMessage'
 import { formatBytes } from '@/lib/formatBytes'
+import { UserAgreementCard } from '@/components/admin/UserAgreementCard'
 
 // Nextcloud writes a quota change immediately (confirmed: the agent's occ
 // call is fully awaited before this backend ever reports success — see
@@ -351,6 +352,8 @@ export default function AdminUserDetail() {
         )}
       </Card>
 
+
+      <UserAgreementCard userId={user.id} />
 
       <ConfirmDialog
         open={statusConfirmOpen}

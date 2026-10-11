@@ -755,7 +755,7 @@ const Home = () => {
       {/* Footer */}
       <footer className="border-t border-[#DDD6C8] bg-[#132A4E]">
         <div className="mx-auto max-w-7xl px-6 py-12 lg:px-8">
-          <div className="grid gap-10 md:grid-cols-3">
+          <div className="grid gap-10 md:grid-cols-4">
             <div>
               <img
                 src="/dalvi-vaultgrid-logo.png"
@@ -800,6 +800,33 @@ const Home = () => {
                 >
                   Security
                 </a>
+              </div>
+            </div>
+
+            <div>
+              <h3 className="text-sm font-semibold text-white">Company</h3>
+
+              <div className="mt-4 space-y-3 text-sm text-[#BFC9D7]">
+                <Link
+                  to="/company-profile"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  Company Profile
+                </Link>
+
+                <Link
+                  to="/client-requirement-form"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  Client Requirement Form
+                </Link>
+
+                <Link
+                  to="/service-agreement"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  Service Agreement
+                </Link>
               </div>
             </div>
 

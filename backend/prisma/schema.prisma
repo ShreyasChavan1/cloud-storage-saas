@@ -170,6 +170,7 @@ model User {
   notificationPreferences NotificationPreference?
   cctvDevices CctvDevice[]
   shares Share[]
+  agreementAcceptances AgreementAcceptance[]
 
   @@map("users")
 }
@@ -448,4 +449,75 @@ model NotificationPreference {
   updatedAt          DateTime @updatedAt @map("updated_at")
 
   @@map("notification_preferences")
+}
+
+// Evidence that a user accepted the DVT Storage Service Agreement (MSA + SLA).
+// One row per acceptance event — never updated in place — so re-acceptance
+// after an agreement change (clause 25) adds a row instead of overwriting
+// the earlier one. Fields mirror the "recommended acceptance record" at the
+// end of the agreement: version, timestamp, account id, registered email,
+// the acceptance event, and best-effort technical audit info.
+model AgreementAcceptance {
+  id String @id @default(uuid())
+  userId String @map("user_id")
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agreementVersion String @map("agreement_version")
+  email String
+  event String @default("REGISTRATION")
+  ipAddress String? @map("ip_address")
+  userAgent String? @map("user_agent")
+  acceptedAt DateTime @default(now()) @map("accepted_at")
+  @@index([userId])
+  @@map("agreement_acceptances")
+}
+
+enum ClientFormStatus {
+  NEW
+  IN_REVIEW
+  PROPOSAL_SENT
+  CLOSED
+}
+
+enum ClientFormPriority {
+  NORMAL
+  HIGH
+  URGENT
+}
+
+// Submissions of the public "Client Requirement & Discovery Form".
+// Sections 1-2 (client details, services) are real columns so the admin
+// list can search/filter on them; sections 3-6 vary by which services were
+// ticked, so they live in `answers` (field key -> string | string[]).
+// The "DVT internal assessment" block (section 7 of the form) is filled in
+// later by an admin and is never shown to, or accepted from, the client.
+model ClientRequirementForm {
+  id String @id @default(uuid())
+  status ClientFormStatus @default(NEW)
+
+  companyName String @map("company_name")
+  contactPerson String @map("contact_person")
+  designation String?
+  mobile String
+  email String
+  industry String?
+  city String?
+  website String?
+  services String[]
+  answers Json
+
+  recommendedService String? @map("recommended_service")
+  estimatedScope String? @map("estimated_scope")
+  suggestedArchitecture String? @map("suggested_architecture")
+  thirdPartyServices String? @map("third_party_services")
+  migrationSetup Boolean? @map("migration_setup")
+  customDevelopment Boolean? @map("custom_development")
+  proposalRequiredBy DateTime? @map("proposal_required_by") @db.Date
+  priority ClientFormPriority @default(NORMAL)
+  technicalNotes String? @map("technical_notes") @db.Text
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([status, createdAt])
+  @@map("client_requirement_forms")
 }

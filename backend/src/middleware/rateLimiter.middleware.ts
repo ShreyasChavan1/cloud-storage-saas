@@ -42,3 +42,16 @@ export const supportMessageRateLimiter = rateLimit({
     sendError(res, 429, 'Too many support messages. Please wait a bit before sending another.')
   },
 })
+
+// Public discovery form (no login required) — hourly rather than 15-minute
+// window because a real prospect submits once, maybe twice if they fix a
+// mistake; anything beyond that is far more likely to be spam.
+export const clientFormRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    sendError(res, 429, 'Too many submissions. Please try again later.')
+  },
+})

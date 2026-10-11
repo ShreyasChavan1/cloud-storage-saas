@@ -41,6 +41,11 @@ export const adminController = {
     return sendSuccess(res, result)
   }),
 
+  getUserAgreements: asyncHandler(async (req: Request, res: Response) => {
+    const agreements = await adminService.getUserAgreements(req.params.id)
+    return sendSuccess(res, { agreements })
+  }),
+
   getUser: asyncHandler(async (req: Request, res: Response) => {
     const user = await adminService.getUser(req.params.id)
     return sendSuccess(res, { user })

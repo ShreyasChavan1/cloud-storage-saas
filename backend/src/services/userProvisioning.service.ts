@@ -22,6 +22,14 @@ export interface ProvisionUserInput {
   // admin-initiated creation can produce another ADMIN account this way —
   // self-registration never passes this.
   role?: 'USER' | 'ADMIN'
+  // Self-registration passes this so the acceptance row is written in the
+  // same nested create as the user — either both exist or neither does.
+  // Admin-created accounts and the seed admin leave it out.
+  agreementAcceptance?: {
+    version: string
+    ipAddress?: string
+    userAgent?: string
+  }
 }
 
 /**
@@ -75,6 +83,19 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
     passwordHash,
     role: input.role ?? 'USER',
     plan: { connect: { id: plan.id } },
+    ...(input.agreementAcceptance
+      ? {
+          agreementAcceptances: {
+            create: {
+              agreementVersion: input.agreementAcceptance.version,
+              email: input.email,
+              event: 'REGISTRATION',
+              ipAddress: input.agreementAcceptance.ipAddress,
+              userAgent: input.agreementAcceptance.userAgent,
+            },
+          },
+        }
+      : {}),
   })
 
   // 2. Provision the matching Nextcloud account, quota-limited to the

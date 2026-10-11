@@ -12,6 +12,7 @@ import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from
 import { generateRandomToken } from '../utils/token'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
+import { CURRENT_AGREEMENT_VERSION } from '../config/agreement'
 import { logger } from '../config/logger'
 import { RegisterInput, LoginInput, ForgotPasswordInput } from '../validators/auth.validator'
 import { AuthResponseDTO } from '../types/auth.types'
@@ -44,6 +45,12 @@ export const authService = {
     input: RegisterInput,
     meta?: SessionMeta
   ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true; devToken?: string }> {
+    if (input.agreementVersion !== CURRENT_AGREEMENT_VERSION) {
+      throw ApiError.badRequest(
+        'The Service Agreement has been updated. Please review the latest version and accept it to continue.'
+      )
+    }
+
     // Self-registration is always role USER on the seeded default plan —
     // see userProvisioning.service.ts, which this now shares with Phase
     // 10's admin-initiated account creation.
@@ -53,6 +60,11 @@ export const authService = {
       phoneNumber: input.phoneNumber,
       password: input.password,
       emailVerifiedAt: null,
+      agreementAcceptance: {
+        version: CURRENT_AGREEMENT_VERSION,
+        ipAddress: meta?.ipAddress,
+        userAgent: meta?.userAgent,
+      },
     })
 
     const rawVerificationToken = generateRandomToken()

@@ -3,6 +3,7 @@ import { Card } from '@/components/ui/Card'
 import { AdminUsersTable } from '@/components/admin/AdminUsersTable'
 import { SupportContactCard } from '@/components/admin/SupportContactCard'
 import { ObjectStorageCard } from '@/components/admin/ObjectStorageCard'
+import { AdminClientFormsTable } from '@/components/admin/AdminClientFormsTable'
 import { useAdminOverview, useAdminStorageOverview } from '@/hooks/useAdminUsers'
 import { formatBytes } from '@/lib/formatBytes'
 
@@ -77,6 +78,10 @@ export default function AdminDashboard() {
           <AdminUsersTable />
         </div>
         <SupportContactCard />
+      </div>
+
+      <div className="mt-5">
+        <AdminClientFormsTable />
       </div>
     </div>
   )

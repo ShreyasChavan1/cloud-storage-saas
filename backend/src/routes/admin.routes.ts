@@ -13,6 +13,12 @@ import {
   updateObjectStorageCapacitySchema,
 } from '../validators/admin.validator'
 import { updateSupportContactSchema } from '../validators/support.validator'
+import { clientFormController } from '../controllers/clientForm.controller'
+import {
+  listClientFormsSchema,
+  clientFormIdParamSchema,
+  updateClientFormSchema,
+} from '../validators/clientForm.validator'
 
 const router = Router()
 
@@ -45,6 +51,7 @@ router.get(
 router.get('/users/:id/payments', validate(userIdParamSchema), adminController.getUserPayments)
 
 router.get('/users/:id/sessions', validate(userIdParamSchema), adminController.getUserSessions)
+router.get('/users/:id/agreements', validate(userIdParamSchema), adminController.getUserAgreements)
 router.delete(
   '/users/:id/sessions/:sessionId',
   validate(revokeSessionSchema),
@@ -57,6 +64,10 @@ router.delete(
 // consistent with overview/listPlans above, the only other no-input
 // routes on this router.
 router.post('/reconcile-subscriptions', adminController.reconcileSubscriptions)
+
+router.get('/client-forms', validate(listClientFormsSchema), clientFormController.list)
+router.get('/client-forms/:id', validate(clientFormIdParamSchema), clientFormController.get)
+router.patch('/client-forms/:id', validate(updateClientFormSchema), clientFormController.update)
 
 router.get('/settings/support', adminController.getSupportContact)
 router.put('/settings/support', validate(updateSupportContactSchema), adminController.updateSupportContact)

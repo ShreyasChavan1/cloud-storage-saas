@@ -18,8 +18,17 @@ export interface RegistrationResult { user: AuthUser; verificationRequired: true
 // Every call here unwraps the backend's { success, data } envelope once,
 // so nothing above this file ever touches that shape directly.
 export const authApi = {
-  register: (name: string, email: string, phoneNumber: string, password: string) =>
-    api.post<{ data: RegistrationResult }>('/auth/register', { name, email, phoneNumber, password }).then((r) => r.data.data),
+  register: (name: string, email: string, phoneNumber: string, password: string, agreementVersion: string) =>
+    api
+      .post<{ data: RegistrationResult }>('/auth/register', {
+        name,
+        email,
+        phoneNumber,
+        password,
+        acceptedAgreement: true,
+        agreementVersion,
+      })
+      .then((r) => r.data.data),
 
   verifyEmail: (token: string) =>
     api.post<{ data: AuthResponse }>('/auth/verify-email', { token }).then((r) => r.data.data),

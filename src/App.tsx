@@ -17,6 +17,10 @@ import AdminUserDetail from '@/pages/admin/AdminUserDetail'
 import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Home from "./pages/Home";
+import ServiceAgreement from '@/pages/ServiceAgreement'
+import CompanyProfile from '@/pages/CompanyProfile'
+import ClientRequirementForm from '@/pages/ClientRequirementForm'
+import AdminClientFormDetail from '@/pages/admin/AdminClientFormDetail'
 
 export default function App() {
   return (
@@ -30,6 +34,9 @@ export default function App() {
       <Route path="/verify-email" element={<VerifyEmail />} />
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/share/:token" element={<PublicShare />} />
+      <Route path="/service-agreement" element={<ServiceAgreement />} />
+      <Route path="/company-profile" element={<CompanyProfile />} />
+      <Route path="/client-requirement-form" element={<ClientRequirementForm />} />
 
       <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
         <Route path="/dashboard" element={<Dashboard />} />
@@ -56,6 +63,14 @@ export default function App() {
           element={
             <ProtectedRoute adminOnly>
               <AdminUserDetail />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/admin/client-forms/:formId"
+          element={
+            <ProtectedRoute adminOnly>
+              <AdminClientFormDetail />
             </ProtectedRoute>
           }
         />

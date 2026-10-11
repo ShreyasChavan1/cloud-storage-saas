@@ -1,4 +1,5 @@
 import { Prisma } from '@prisma/client'
+import { agreementAcceptanceRepository } from '../repositories/agreementAcceptance.repository'
 import { userRepository } from '../repositories/user.repository'
 import { appSettingsRepository } from '../repositories/appSettings.repository'
 import { sessionRepository } from '../repositories/session.repository'
@@ -70,6 +71,24 @@ export const adminService = {
     ])
 
     return { users: users.map(toAdminUserDTO), total, page: query.page, limit: query.limit }
+  },
+
+  // Evidence of which version of the Service Agreement the user accepted,
+  // when, and from where (the agreement itself says DVT should retain this).
+  // Empty for admin-created accounts and for accounts that predate the
+  // acceptance checkbox.
+  async getUserAgreements(id: string) {
+    await getRequiredUser(id)
+    const rows = await agreementAcceptanceRepository.findByUser(id)
+    return rows.map((r) => ({
+      id: r.id,
+      version: r.agreementVersion,
+      event: r.event,
+      email: r.email,
+      ipAddress: r.ipAddress,
+      userAgent: r.userAgent,
+      acceptedAt: r.acceptedAt.toISOString(),
+    }))
   },
 
   async getUser(id: string): Promise<AdminUserDTO> {
