@@ -133,16 +133,13 @@ const Home = () => {
               <div>
                 <div className="mb-4 inline-flex items-center gap-2 border-l-4 border-[#E8792B] bg-[#F5EEE4] px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#6C4A32]">
                   <span className="h-1.5 w-1.5 rounded-full bg-[#E8792B]" />
-                  Secure cloud storage & automatic backup
+                  DV Technologies
                 </div>
 
                 <h1 className="max-w-3xl text-4xl font-semibold leading-[1.06] tracking-[-0.035em] !text-[#132A4E] sm:text-5xl lg:text-[3.7rem]">
-                  Secure File, CCTV & NVR Storage,
+                  Digital Business Solutions
                   <br />
-                  {" "}
-                  <span className="text-[#D86520]">
-                    Digital Services.
-                  </span>
+                  
                 </h1>
 
                 <p className="mt-5 max-w-2xl text-base leading-7 !text-[#62645F] sm:text-lg">

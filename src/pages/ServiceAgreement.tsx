@@ -45,12 +45,12 @@ export default function ServiceAgreement() {
         </p>
       </div>
 
-      {SHOW_TEMPLATE_BANNER && (
+      {/* {SHOW_TEMPLATE_BANNER && (
         <div role="note" className="mt-6 flex items-start gap-3 rounded-lg border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
           <p className="font-semibold uppercase tracking-wide">General template — legal review required before production use. DVT is currently operated under the DVT Technologies brand by its proprietor; no registered company name is represented here.</p>
         </div>
-      )}
+      )} */}
 
       <div className="mt-6 flex flex-wrap items-center justify-center gap-3 print:hidden">
         <button
