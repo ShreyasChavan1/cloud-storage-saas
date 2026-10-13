@@ -1063,8 +1063,7 @@ const Home = () => {
               />
 
               <p className="mt-4 max-w-sm text-sm leading-6 text-[#BFC9D7]">
-                Secure cloud storage, automatic CCTV backup and NVR cloud
-                backup solutions from DV Technologies.
+                Secure Managed Digital Solutions from DV Technologies.
               </p>
             </div>
 
@@ -1163,7 +1162,7 @@ const Home = () => {
               reserved.
             </span>
 
-            <span>Cloud Storage • CCTV Backup • NVR Backup</span>
+            <span>Managed Digital Solutions</span>
           </div>
         </div>
       </footer>
