@@ -8,6 +8,10 @@ export const passwordField = z
   .string()
   .min(8, 'Password must be at least 8 characters')
   .max(72, 'Password must be at most 72 characters')
+  // Nextcloud used to be the only place password strength was enforced (it
+  // received the user's password). It now gets an independent random secret,
+  // so the rule has to live here.
+  .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), 'Password must include at least one letter and one number')
 export const personNameField = z.string().trim().min(2, 'Name must be at least 2 characters').max(80)
 export const phoneField = z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number')
 

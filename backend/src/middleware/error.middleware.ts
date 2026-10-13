@@ -37,6 +37,9 @@ export function errorMiddleware(err: unknown, req: Request, res: Response, _next
 
   logger.error({ err, reqId: req.id }, 'Unhandled error')
 
-  const message = env.NODE_ENV === 'production' ? 'Internal server error' : (err as Error)?.message
+  // Raw error text can contain SQL, file paths or upstream URLs. Show it only
+  // when NODE_ENV is explicitly 'development'; every other value (including
+  // a misconfigured one) gets the generic message.
+  const message = env.NODE_ENV === 'development' ? (err as Error)?.message : 'Internal server error'
   return sendError(res, 500, message ?? 'Internal server error')
 }

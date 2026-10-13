@@ -1,7 +1,7 @@
 import { posix } from 'path'
 import { userRepository } from '../repositories/user.repository'
 import { webDavService, WebDavError } from './WebDavService'
-import { sanitizeDavPath } from '../utils/davPath'
+import { sanitizeDavPath, assertSafeFileName } from '../utils/davPath'
 import { decrypt } from '../utils/encryption'
 import { ApiError } from '../utils/ApiError'
 import { favoriteRepository } from '../repositories/favorite.repository'
@@ -102,7 +102,7 @@ export const filesService = {
   ): Promise<FileEntryDTO> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     const folder = sanitizeDavPath(rawPath)
-    const destination = sanitizeDavPath(posix.join(folder, filename))
+    const destination = sanitizeDavPath(posix.join(folder, assertSafeFileName(filename)))
     try {
       await webDavService.uploadBuffer(nextcloudUsername, davPassword, destination, data)
       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
@@ -124,7 +124,7 @@ export const filesService = {
   ): Promise<FileEntryDTO> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
     const folder = sanitizeDavPath(rawPath)
-    const destination = sanitizeDavPath(posix.join(folder, filename))
+    const destination = sanitizeDavPath(posix.join(folder, assertSafeFileName(filename)))
     try {
       await webDavService.uploadFromFile(nextcloudUsername, davPassword, destination, localPath, size)
       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
@@ -141,7 +141,7 @@ export const filesService = {
     filename: string
   ): Promise<{ uploadId: string; chunkSize: number }> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
     const uploadId = randomUUID()
     try {
       await webDavService.startChunkedUpload(nextcloudUsername, davPassword, uploadId, destination)
@@ -162,7 +162,7 @@ export const filesService = {
     data: NodeJS.ReadableStream
   ): Promise<void> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
     try {
       await webDavService.putUploadChunk(nextcloudUsername, davPassword, uploadId, index, destination, totalSize, chunkLength, data)
     } catch (err) {
@@ -178,7 +178,7 @@ export const filesService = {
     totalSize: number
   ): Promise<FileEntryDTO> {
     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
+    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
     try {
       await webDavService.finishChunkedUpload(nextcloudUsername, davPassword, uploadId, destination, totalSize)
       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)

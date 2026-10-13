@@ -1,4 +1,5 @@
 import { z } from 'zod'
+import { isSafeSegmentId } from '../utils/davPath'
 
 const nameField = z
   .string()
@@ -26,7 +27,7 @@ export const deleteFileSchema = z.object({
 
 export const trashItemSchema = z.object({
   params: z.object({
-    id: z.string().min(1, 'id is required'),
+    id: z.string().min(1, 'id is required').refine(isSafeSegmentId, 'Invalid id'),
   }),
 })
 

@@ -25,6 +25,37 @@ export const sessionRepository = {
       where: {
         refreshToken: refreshTokenHash,
         expiresAt: { gt: new Date() },
+        rotatedAt: null,
+      },
+    })
+  },
+
+  // Unlike findValidByHash this also returns rows that were already rotated,
+  // which is exactly what reuse detection needs to see.
+  findAnyUnexpiredByHash(refreshTokenHash: string) {
+    return prisma.session.findFirst({
+      where: { refreshToken: refreshTokenHash, expiresAt: { gt: new Date() } },
+    })
+  },
+
+  // Atomic claim: only one concurrent caller can flip rotatedAt from null.
+  async markRotated(id: string): Promise<boolean> {
+    const res = await prisma.session.updateMany({
+      where: { id, rotatedAt: null },
+      data: { rotatedAt: new Date() },
+    })
+    return res.count === 1
+  },
+
+  // Expired sessions are useless; rotated ones are kept only long enough to
+  // catch a replayed token, then dropped.
+  deleteStale(rotatedRetentionMs: number) {
+    return prisma.session.deleteMany({
+      where: {
+        OR: [
+          { expiresAt: { lt: new Date() } },
+          { rotatedAt: { lt: new Date(Date.now() - rotatedRetentionMs) } },
+        ],
       },
     })
   },
@@ -44,7 +75,7 @@ export const sessionRepository = {
   // comment above on why row-existence-plus-unexpired IS validity here).
   findManyForUser(userId: string) {
     return prisma.session.findMany({
-      where: { userId, expiresAt: { gt: new Date() } },
+      where: { userId, expiresAt: { gt: new Date() }, rotatedAt: null },
       orderBy: { createdAt: 'desc' },
     })
   },
@@ -62,6 +93,6 @@ export const sessionRepository = {
   // repository-only-touches-prisma discipline every other service in this
   // codebase already follows.
   countActive(): Promise<number> {
-    return prisma.session.count({ where: { expiresAt: { gt: new Date() } } })
+    return prisma.session.count({ where: { expiresAt: { gt: new Date() }, rotatedAt: null } })
   },
 }

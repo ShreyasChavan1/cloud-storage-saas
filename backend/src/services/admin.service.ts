@@ -6,6 +6,7 @@ import { sessionRepository } from '../repositories/session.repository'
 import { paymentRepository } from '../repositories/payment.repository'
 import { planRepository } from '../repositories/plan.repository'
 import { provisionUser } from './userProvisioning.service'
+import { deleteAccountData } from './accountDeletion.service'
 import { reconciliationService, ReconciliationSummary } from './reconciliation.service'
 import { nextcloudService, NextcloudApiError } from './NextcloudService'
 import { supportService } from './support.service'
@@ -126,13 +127,9 @@ export const adminService = {
 
     const updated = await userRepository.update(id, { status })
 
-    // Suspension takes effect immediately rather than only blocking future
-    // logins: deleting every session forces a fresh login attempt, which
-    // authService.login now rejects outright for a suspended account. An
-    // already-issued *access* token can still work until it naturally
-    // expires (see the UserStatus enum comment in schema.prisma) — that's
-    // an accepted tradeoff of this backend's stateless-access-token
-    // design, not something this endpoint can close on its own.
+    // Suspension is immediate: requireAuth re-reads the user's status on
+    // every request, so already-issued access tokens stop working at once,
+    // and deleting the sessions stops refresh as well.
     if (status === 'SUSPENDED') {
       await sessionRepository.deleteAllForUser(id)
     }
@@ -145,26 +142,9 @@ export const adminService = {
     const target = await getRequiredUser(id)
     await assertNotLastAdmin(target)
 
-    // Delete the Nextcloud account FIRST. If that fails, abort and leave
-    // both sides intact so the whole operation can simply be retried —
-    // the mirror image of registration's rollback (which deletes the
-    // JUST-created Postgres row if Nextcloud provisioning fails), but the
-    // same underlying rule: never leave a Postgres user and its Nextcloud
-    // account out of sync with each other.
-    if (target.nextcloudUsername) {
-      try {
-        await nextcloudService.deleteUser(target.nextcloudUsername)
-      } catch (err) {
-        const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
-        logger.error({ userId: id, detail }, 'Nextcloud account deletion failed — Postgres user NOT deleted')
-        throw ApiError.serviceUnavailable('Could not delete the storage account. Please try again.')
-      }
-    }
-
-    // Cascades to that user's sessions, subscriptions, payments, and
-    // password reset tokens automatically — all `onDelete: Cascade` in
-    // schema.prisma — so nothing further to clean up here.
-    await userRepository.delete(id)
+    // Shared teardown: revoke access, cancel Razorpay autopay, delete the
+    // Nextcloud account, then the Postgres row. Fails closed at each step.
+    await deleteAccountData(target)
   },
 
   // Deliberately does NOT touch `planId` or the Plan/Subscription

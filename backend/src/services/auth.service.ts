@@ -3,13 +3,13 @@ import { userRepository } from '../repositories/user.repository'
 import { sessionRepository } from '../repositories/session.repository'
 import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
 import { provisionUser } from './userProvisioning.service'
-import { nextcloudService, NextcloudApiError } from './NextcloudService'
+import { nextcloudService } from './NextcloudService'
 import { hashPassword } from '../utils/password'
 import { encrypt } from '../utils/encryption'
 import { toAuthUserDTO } from '../models/user.model'
 import { comparePassword } from '../utils/password'
 import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
-import { generateRandomToken } from '../utils/token'
+import { generateRandomToken, generateStorageSecret } from '../utils/token'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
 import { CURRENT_AGREEMENT_VERSION } from '../config/agreement'
@@ -40,11 +40,41 @@ async function issueTokenPair(userId: string, email: string, meta?: SessionMeta)
   return { accessToken, refreshToken }
 }
 
+// A refresh token that was already exchanged is normally a stolen/replayed
+// copy. A short grace window tolerates two legitimate requests racing with the
+// same cookie (two tabs, a retry) so they get a plain 401 instead of killing
+// every session the real user has.
+const REFRESH_REUSE_GRACE_MS = 10_000
+
+// Compared against when the email is unknown so a login attempt costs one
+// bcrypt either way. Without it, "no such user" returns ~instantly while a
+// real user takes ~250ms at cost 12, which reveals which emails are registered.
+let dummyHashPromise: Promise<string> | undefined
+function getDummyHash() {
+  dummyHashPromise ??= hashPassword(generateRandomToken())
+  return dummyHashPromise
+}
+
+// Kill every way a user can still act as themselves: refresh tokens (sessions)
+// and not-yet-expired access tokens (tokensValidAfter, checked by requireAuth).
+async function revokeAllAccess(userId: string) {
+  await sessionRepository.deleteAllForUser(userId)
+  await userRepository.revokeAccessTokens(userId)
+}
+
+function logVerificationLinkForLocalDev(kind: string, url: string, email: string) {
+  // Only when NODE_ENV is explicitly 'development' (it is now a required
+  // setting). Goes to the server log, never into an HTTP response.
+  if (env.NODE_ENV === 'development') {
+    logger.info({ email, url }, `[dev only] ${kind} link (not emailed)`)
+  }
+}
+
 export const authService = {
   async register(
     input: RegisterInput,
     meta?: SessionMeta
-  ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true; devToken?: string }> {
+  ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true }> {
     if (input.agreementVersion !== CURRENT_AGREEMENT_VERSION) {
       throw ApiError.badRequest(
         'The Service Agreement has been updated. Please review the latest version and accept it to continue.'
@@ -52,8 +82,8 @@ export const authService = {
     }
 
     // Self-registration is always role USER on the seeded default plan —
-    // see userProvisioning.service.ts, which this now shares with Phase
-    // 10's admin-initiated account creation.
+    // see userProvisioning.service.ts, which this shares with admin-created
+    // accounts.
     const user = await provisionUser({
       name: input.name,
       email: input.email,
@@ -79,35 +109,49 @@ export const authService = {
     } catch (err) {
       logger.error({ err, userId: user.id }, 'Email verification delivery failed')
       if (env.NODE_ENV === 'production') {
-        throw ApiError.serviceUnavailable('Account created, but we could not send the verification email. Please try again later.')
+        throw ApiError.serviceUnavailable('Account created, but we could not send the verification email. Please use "resend verification" in a few minutes.')
       }
-      return { user: toAuthUserDTO(user), verificationRequired: true as const, devToken: rawVerificationToken }
+      logVerificationLinkForLocalDev('verification', verificationUrl, user.email)
     }
 
-    if (user.nextcloudUsername) { try { await nextcloudService.setEmail(user.nextcloudUsername, user.email) } catch (err) { logger.warn({ userId:user.id, err }, 'Could not synchronize Nextcloud email during login') } }
+    if (user.nextcloudUsername) {
+      try {
+        await nextcloudService.setEmail(user.nextcloudUsername, user.email)
+      } catch (err) {
+        logger.warn({ userId: user.id, err }, 'Could not synchronize Nextcloud email during registration')
+      }
+    }
 
     return { user: toAuthUserDTO(user), verificationRequired: true }
   },
 
-
   async verifyEmail(token: string, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
-    const stored = await emailVerificationTokenRepository.findValidByHash(hashToken(token))
-    if (!stored) throw ApiError.badRequest('This email verification link is invalid or has expired.')
+    const invalid = () => ApiError.badRequest('This email verification link is invalid or has expired.')
 
-    const user = await userRepository.findById(stored.userId)
-    if (!user) throw ApiError.badRequest('This email verification link is invalid or has expired.')
+    // Atomic: two concurrent requests with the same link cannot both pass.
+    const claimed = await emailVerificationTokenRepository.consumeByHash(hashToken(token))
+    if (!claimed) throw invalid()
 
-    await userRepository.update(user.id, { emailVerifiedAt: new Date() })
-    await emailVerificationTokenRepository.markUsed(stored.id)
+    const user = await userRepository.findById(claimed.userId)
+    if (!user) throw invalid()
+    // A verification link must not be a way to sign in as a suspended account.
+    if (user.status === 'SUSPENDED') {
+      throw ApiError.forbidden('This account has been suspended. Contact support for help.')
+    }
 
-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
-    const verifiedUser = await userRepository.findById(user.id)
-    return { user: toAuthUserDTO(verifiedUser!), accessToken, refreshToken }
+    const verifiedUser = user.emailVerifiedAt
+      ? user
+      : await userRepository.update(user.id, { emailVerifiedAt: new Date() })
+
+    const { accessToken, refreshToken } = await issueTokenPair(verifiedUser.id, verifiedUser.email, meta)
+    return { user: toAuthUserDTO(verifiedUser), accessToken, refreshToken }
   },
 
+  // Never throws for delivery problems: success/failure here would otherwise
+  // tell the caller whether the address belongs to an unverified account.
   async resendVerificationEmail(email: string): Promise<void> {
     const user = await userRepository.findByEmail(email)
-    if (!user || user.emailVerifiedAt) return
+    if (!user || user.emailVerifiedAt || user.status === 'SUSPENDED') return
 
     const rawToken = generateRandomToken()
     const tokenHash = hashToken(rawToken)
@@ -115,13 +159,20 @@ export const authService = {
     await emailVerificationTokenRepository.create(user.id, tokenHash, expiresAt)
     await emailVerificationTokenRepository.deleteAllForUserExcept(user.id, tokenHash)
     const url = `${env.CLIENT_EMAIL_VERIFICATION_URL}?token=${encodeURIComponent(rawToken)}`
-    await sendEmailVerificationEmail(user.email, url)
+    try {
+      await sendEmailVerificationEmail(user.email, url)
+    } catch (err) {
+      logger.error({ err, userId: user.id }, 'Verification email resend failed')
+      logVerificationLinkForLocalDev('verification', url, user.email)
+    }
   },
+
   async login(input: LoginInput, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
     const user = await userRepository.findByEmail(input.email)
     // Same message whether the email doesn't exist or the password is
     // wrong — don't leak which one it was.
     if (!user) {
+      await comparePassword(input.password, await getDummyHash())
       throw ApiError.unauthorized('Invalid email or password')
     }
 
@@ -158,8 +209,22 @@ export const authService = {
     }
 
     const tokenHash = hashToken(rawRefreshToken)
-    const stored = await sessionRepository.findValidByHash(tokenHash)
-    if (!stored) {
+    const stored = await sessionRepository.findAnyUnexpiredByHash(tokenHash)
+    if (!stored || stored.userId !== payload.sub) {
+      throw ApiError.unauthorized('Session has expired or was already used')
+    }
+
+    // Reuse detection. This token was already exchanged for a newer one, so
+    // whoever is presenting it now is either a thief or the victim racing a
+    // thief — we cannot tell which, so everything for this user is revoked.
+    if (stored.rotatedAt) {
+      if (Date.now() - stored.rotatedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
+        logger.warn(
+          { userId: stored.userId, ipAddress: meta?.ipAddress },
+          'Refresh token reuse detected — all sessions revoked'
+        )
+        await revokeAllAccess(stored.userId)
+      }
       throw ApiError.unauthorized('Session has expired or was already used')
     }
 
@@ -168,11 +233,6 @@ export const authService = {
       throw ApiError.unauthorized('User no longer exists')
     }
 
-    // A user suspended after this session was issued shouldn't be able to
-    // keep renewing it indefinitely. Refresh already does a DB read (the
-    // findById above), so this check is effectively free here — see the
-    // UserStatus enum comment in schema.prisma for why this isn't also
-    // done on every single authenticated request.
     if (!user.emailVerifiedAt) {
       await sessionRepository.deleteByHash(tokenHash)
       throw ApiError.forbidden('Please verify your email address before logging in.')
@@ -183,9 +243,11 @@ export const authService = {
       throw ApiError.forbidden('This account has been suspended. Contact support for help.')
     }
 
-    // Rotate: delete the presented session and issue a brand new one. Limits
-    // the blast radius if a refresh token is ever stolen from storage.
-    await sessionRepository.deleteByHash(tokenHash)
+    // Rotate. markRotated is an atomic compare-and-set, so if two requests
+    // race with the same token exactly one proceeds and the other gets a 401.
+    if (!(await sessionRepository.markRotated(stored.id))) {
+      throw ApiError.unauthorized('Session has expired or was already used')
+    }
     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
 
     return { user: toAuthUserDTO(user), accessToken, refreshToken }
@@ -202,14 +264,12 @@ export const authService = {
     return toAuthUserDTO(user)
   },
 
-  // Always resolves the same way whether or not the email exists — the
-  // caller (controller) returns an identical generic message either way,
-  // so this endpoint can't be used to enumerate registered emails.
-  async forgotPassword(input: ForgotPasswordInput): Promise<{ devToken?: string }> {
+  // Resolves the same way whether or not the email exists, and the controller
+  // does not wait for it, so neither the response body nor its timing can be
+  // used to enumerate registered emails.
+  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
     const user = await userRepository.findByEmail(input.email)
-    if (!user) {
-      return {}
-    }
+    if (!user || user.status === 'SUSPENDED') return
 
     const rawToken = generateRandomToken()
     const expiresAt = new Date(Date.now() + ms(env.PASSWORD_RESET_TOKEN_EXPIRES_IN))
@@ -221,54 +281,34 @@ export const authService = {
     try {
       await sendPasswordResetEmail(user.email, resetUrl)
     } catch (err) {
-      // Never turn mail-delivery state into an account-enumeration side channel.
-      // The token remains valid so a transient Resend outage can be retried by
-      // the user without changing the account state again.
       logger.error({ err, userId: user.id }, 'Password reset email delivery failed')
-      if (env.NODE_ENV === 'production') return {}
+      logVerificationLinkForLocalDev('password reset', resetUrl, user.email)
     }
-
-    if (env.NODE_ENV !== 'production' && (!env.RESEND_API_KEY || !env.EMAIL_FROM)) {
-      return { devToken: rawToken }
-    }
-    return {}
   },
 
   async resetPassword(token: string, newPassword: string): Promise<void> {
-    const stored = await passwordResetTokenRepository.findValidByHash(hashToken(token))
-    if (!stored) throw ApiError.badRequest('This password reset link is invalid or has expired.')
+    const invalid = () => ApiError.badRequest('This password reset link is invalid or has expired.')
 
-    const user = await userRepository.findById(stored.userId)
-    if (!user) throw ApiError.badRequest('This password reset link is invalid or has expired.')
+    // Single-use claim happens BEFORE anything changes, atomically.
+    const claimed = await passwordResetTokenRepository.consumeByHash(hashToken(token))
+    if (!claimed) throw invalid()
 
-    let webdavPassword: string
-    try {
-      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
-      webdavPassword = result.webdavPassword
-    } catch (err) {
-      // Check the specific, expected case FIRST — a weak password the user
-      // typed in isn't a failure worth an error-level log line (only
-      // genuine outages/unexpected agent errors get logged below).
-      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
-        throw ApiError.badRequest(
-          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
-        )
-      }
-      const detail = err instanceof Error ? err.message : 'unknown error'
-      logger.error(
-        { userId: user.id, detail },
-        'Nextcloud password change failed — Postgres credentials left unchanged'
-      )
-      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
-    }
+    const user = await userRepository.findById(claimed.userId)
+    if (!user) throw invalid()
+
+    // The Nextcloud login/WebDAV credentials are independent random secrets
+    // (see userProvisioning.service), so a Nimbus password change does not
+    // touch Nextcloud at all.
     await userRepository.update(user.id, {
       passwordHash: await hashPassword(newPassword),
-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+      // Receiving this email proves control of the mailbox.
+      ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }),
     })
-    await passwordResetTokenRepository.markUsed(stored.id)
-    await sessionRepository.deleteAllForUser(user.id)
+    await revokeAllAccess(user.id)
   },
 
+  // Mints fresh, random Nextcloud credentials. No user secret is involved or
+  // sent anywhere; the current password only proves the caller is the owner.
   async repairWebdavPassword(userId: string, currentPassword: string): Promise<void> {
     const user = await userRepository.findById(userId)
     if (!user) throw ApiError.notFound('User not found')
@@ -277,7 +317,7 @@ export const authService = {
     }
     let webdavPassword: string
     try {
-      const result = await nextcloudService.refreshWebdavPassword(user.nextcloudUsername ?? user.id, currentPassword)
+      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, generateStorageSecret())
       webdavPassword = result.webdavPassword
     } catch (err) {
       const detail = err instanceof Error ? err.message : 'unknown error'
@@ -295,26 +335,7 @@ export const authService = {
     if (!(await comparePassword(currentPassword, user.passwordHash))) {
       throw ApiError.unauthorized('Current password is incorrect')
     }
-    let webdavPassword: string
-    try {
-      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
-      webdavPassword = result.webdavPassword
-    } catch (err) {
-      // Check the specific, expected case FIRST — see resetPassword above
-      // for why this comes before the generic error-log/service-unavailable path.
-      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
-        throw ApiError.badRequest(
-          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
-        )
-      }
-      const detail = err instanceof Error ? err.message : 'unknown error'
-      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
-      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
-    }
-    await userRepository.update(user.id, {
-      passwordHash: await hashPassword(newPassword),
-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
-    })
-    await sessionRepository.deleteAllForUser(user.id)
+    await userRepository.update(user.id, { passwordHash: await hashPassword(newPassword) })
+    await revokeAllAccess(user.id)
   },
 }

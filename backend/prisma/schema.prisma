@@ -133,6 +133,11 @@ model User {
   phoneNumber  String? @map("phone_number")
   emailVerifiedAt DateTime? @map("email_verified_at")
   passwordHash String     @map("password_hash")
+  // Access tokens issued before this instant are rejected by requireAuth,
+  // even though they have not expired yet. Bumped on password change/reset,
+  // refresh-token reuse, suspension and account deletion so a stolen access
+  // token dies immediately instead of living out its 15 minutes.
+  tokensValidAfter DateTime? @map("tokens_valid_after")
   role         Role       @default(USER)
   status       UserStatus @default(ACTIVE)
   avatarData   String?    @map("avatar_data") @db.Text
@@ -393,6 +398,12 @@ model Session {
   // row can't be replayed as a live session.
   refreshToken String   @unique @map("refresh_token")
   expiresAt    DateTime @map("expires_at")
+
+  // Set when this refresh token is exchanged for a new one. The row is kept
+  // (instead of deleted) for a short while so that presenting an already
+  // rotated token can be recognised as reuse/theft and answered by revoking
+  // every session of that user. See authService.refresh.
+  rotatedAt DateTime? @map("rotated_at")
 
   // Added for Phase 10's admin "active sessions" view — captured once at
   // issueTokenPair() time (see auth.service.ts), never updated afterward.

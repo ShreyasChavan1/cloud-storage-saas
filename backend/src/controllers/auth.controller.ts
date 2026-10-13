@@ -5,6 +5,7 @@ import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
 import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
+import { logger } from '../config/logger'
 
 const REFRESH_COOKIE_NAME = 'nimbus_refresh_token'
 
@@ -67,14 +68,16 @@ export const authController = {
   }),
 
   forgotPassword: asyncHandler(async (req: Request, res: Response) => {
-    const { devToken } = await authService.forgotPassword(req.body)
+    // Fire-and-forget: the work (DB writes + a call to the mail provider) takes
+    // visibly longer for a registered address than for an unknown one, so
+    // awaiting it would let a caller tell them apart by response time.
+    void authService.forgotPassword(req.body).catch((err) => {
+      logger.error({ err }, 'forgotPassword background task failed')
+    })
 
-    // Same response whether or not the email is registered — never reveal
-    // which one it was.
+    // Same response whether or not the email is registered.
     return sendSuccess(res, {
       message: 'If an account exists for that email, a reset link has been sent.',
-      // Only present outside production when no mail transport is configured.
-      ...(devToken ? { devToken } : {}),
     })
   }),
 
@@ -85,7 +88,9 @@ export const authController = {
   }),
 
   resendVerificationEmail: asyncHandler(async (req: Request, res: Response) => {
-    await authService.resendVerificationEmail(req.body.email)
+    void authService.resendVerificationEmail(req.body.email).catch((err) => {
+      logger.error({ err }, 'resendVerificationEmail background task failed')
+    })
     return sendSuccess(res, { message: 'If the account exists and is not verified, a verification email has been sent.' })
   }),
 

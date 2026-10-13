@@ -11,7 +11,6 @@ export default function ForgotPassword() {
   const [loading, setLoading] = useState(false)
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
-  const [devResetUrl, setDevResetUrl] = useState('')
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
@@ -22,8 +21,7 @@ export default function ForgotPassword() {
       // The backend always returns the same generic response whether or
       // not the email is registered — that's intentional (prevents
       // enumerating accounts), not a bug to work around here.
-      const result = await authApi.forgotPassword(email)
-      if (result.devToken) setDevResetUrl(`${window.location.origin}/reset-password?token=${encodeURIComponent(result.devToken)}`)
+      await authApi.forgotPassword(email)
       setSent(true)
     } catch {
       setError('Something went wrong. Please try again.')
@@ -41,7 +39,6 @@ export default function ForgotPassword() {
           <p className="text-sm text-ink-500 dark:text-ink-400">
             If an account exists for <span className="font-medium">{email}</span>, we've sent a reset link.
           </p>
-          {devResetUrl && <p className="mt-2 break-all text-xs text-brand-600">Development reset link: <a className="underline" href={devResetUrl}>Open reset link</a></p>}
         </div>
       ) : (
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">

@@ -42,9 +42,8 @@ export default function Register() {
     if (missingAgreement) return
     setLoading(true)
     try {
-      const result = await register(name, email, phoneNumber, password, AGREEMENT_VERSION)
-      const token = result.devToken ? `&token=${encodeURIComponent(result.devToken)}` : ''
-      navigate(`/verify-email?email=${encodeURIComponent(email)}${token}`)
+      await register(name, email, phoneNumber, password, AGREEMENT_VERSION)
+      navigate(`/verify-email?email=${encodeURIComponent(email)}`)
     } catch (err) {
       const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
       setError(message ?? 'Something went wrong. Please try again.')

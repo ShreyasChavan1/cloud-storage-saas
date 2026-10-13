@@ -2,6 +2,7 @@ import { createApp } from './app'
 import { env } from './config/env'
 import { logger } from './config/logger'
 import { connectDatabase, disconnectDatabase } from './database/prisma'
+import { runAuthCleanup } from './services/authCleanup.service'
 
 async function bootstrap() {
   await connectDatabase()
@@ -21,6 +22,13 @@ async function bootstrap() {
   server.timeout = 0
   server.headersTimeout = 60_000
   server.keepAliveTimeout = 65_000
+
+  // Housekeeping for auth tables: expired/rotated sessions and used or expired
+  // reset/verification tokens. Without it they accumulate forever. unref() so
+  // the timer never keeps the process alive during shutdown.
+  void runAuthCleanup()
+  const cleanupTimer = setInterval(() => void runAuthCleanup(), 60 * 60 * 1000)
+  cleanupTimer.unref()
 
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received — shutting down gracefully`)

@@ -4,6 +4,7 @@ import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
 import { notificationService } from '../services/notification.service'
 import { authService } from '../services/auth.service'
+import { accountDeletionService } from '../services/accountDeletion.service'
 import { ApiError } from '../utils/ApiError'
 
 export const userController = {
@@ -15,6 +16,12 @@ export const userController = {
   changePassword: asyncHandler(async (req: Request, res: Response) => {
     await authService.changePassword(req.user!.sub, req.body.currentPassword, req.body.newPassword)
     return sendSuccess(res, { message: 'Password updated successfully.' })
+  }),
+
+  deleteAccount: asyncHandler(async (req: Request, res: Response) => {
+    await accountDeletionService.deleteOwnAccount(req.user!.sub, req.body.password)
+    res.clearCookie('nimbus_refresh_token', { path: '/api/auth' })
+    return sendSuccess(res, { deleted: true })
   }),
 
   repairWebdavPassword: asyncHandler(async (req: Request, res: Response) => {

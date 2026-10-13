@@ -1,0 +1,2467 @@
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/SECURITY_CHANGES.md ./SECURITY_CHANGES.md
+--- a/SECURITY_CHANGES.md	1970-01-01 00:00:00.000000000 +0000
++++ b/SECURITY_CHANGES.md	2026-10-13 05:51:01.213143501 +0000
+@@ -0,0 +1,33 @@
++# Security hardening — what changed and what you must do
++
++## Deploy checklist (in order)
++1. **Set `NODE_ENV` explicitly** everywhere (`production` on the server). The app now refuses to boot without it.
++2. **Set `TRUST_PROXY_HOPS`** (1 behind Railway/Render/nginx, 0 if directly exposed). Previously every user behind the proxy shared one rate-limit bucket.
++3. In production, `JWT_ACCESS_SECRET` / `JWT_REFRESH_SECRET` must be >=32 random chars, different from each other, and not placeholders — otherwise boot fails.
++4. `cd backend && npx prisma migrate deploy` (adds `users.tokens_valid_after`, `sessions.rotated_at`).
++5. Deploy. Existing sessions keep working.
++6. Back up the DB, then migrate legacy Nextcloud accounts:
++   `npx tsx scripts/decouple-nextcloud-passwords.ts` (dry run) then `... --apply`.
++7. Rotate the Neon DB password if the old `.env.example` value was ever committed (git history keeps it).
++
++## Behaviour changes to be aware of
++- Password change/reset now ends **all** sessions immediately, including the current one (the user must log in again).
++- Reset-password also marks the email verified (receiving the mail proves mailbox control).
++- New passwords need a letter and a digit (Nextcloud used to be the only place strength was enforced).
++- `forgot-password` / `resend-verification` return instantly and send mail in the background; 3 mails per address per hour.
++- `..` segments, backslashes and control characters in file paths are rejected with 400 (previously `..` was silently clamped).
++- `DELETE /api/users/me` `{ password }` deletes the account (cancels Razorpay autopay, deletes Nextcloud account first).
++
++## Added after reviewing your latest zip (agreements + client forms)
++- Re-applied on top of the new features; the only real conflicts were additive (registration agreement fields, `clientFormRateLimiter`) and both sides were kept.
++- New public `POST /api/client-forms` is size-capped, validated and rate-limited (10/hour/IP, correct per-client now that `TRUST_PROXY_HOPS` is set), and the global limiter covers it. It has no CAPTCHA, so determined spam will still land in the admin list.
++- Admin client-form routes sit behind `requireAuth` + `requireAdmin`; the submitted `website` is stored but never rendered as a link.
++- Your WebDAV trash change now passes the trash id to the library un-encoded; the new id validation (`isSafeSegmentId`) is what stops a crafted id with `/` or `..` from re-pointing that request, so keep it.
++- **Conflict to decide:** `agreement_acceptances` cascades on user delete, so self-service/admin deletion erases the acceptance evidence your agreement says should be retained. Same for payments. Consider anonymising instead of hard-deleting.
++
++## Known limits / not done
++- Rate-limit counters are in-memory per process; with >1 instance use a shared store.
++- Admin accounts use the same 15-minute JWT as users: no MFA, no separate admin session, no audit log.
++- Deleting a user cascades to their Payment/Subscription rows. Check invoice-retention obligations before relying on it.
++- `backend/package-lock.json` is out of sync with `package.json` (`@aws-sdk/client-s3`), so `npm ci` fails — run `npm install` and commit the lock.
++- Four pre-existing unit tests fail on the original code too (admin `listUsers`/`createUser`, two reconciliation tests) and are untouched.
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/.env.example ./backend/.env.example
+--- a/backend/.env.example	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/.env.example	2026-10-13 05:51:01.217033242 +0000
+@@ -0,0 +1,45 @@
++# ---- Server -----------------------------------------------------------------
++# REQUIRED, no default: development | test | production. The app refuses to
++# start without it (a forgotten value used to silently mean "development").
++NODE_ENV=development
++PORT=4000
++CLIENT_ORIGIN=http://localhost:5173
++# Reverse-proxy hops in front of the app (Railway/Render/nginx = 1, none = 0).
++# Wrong values break rate limiting: too low = all users share one bucket,
++# too high = clients can spoof X-Forwarded-For.
++TRUST_PROXY_HOPS=1
++GLOBAL_RATE_LIMIT_PER_15MIN=1500
++
++# ---- Database (NEVER commit a real connection string) -----------------------
++DATABASE_URL="postgresql://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require"
++
++# ---- JWT --------------------------------------------------------------------
++# Production needs >=32 random chars, two DIFFERENT values, no placeholders:
++#   node -e "console.log(require('crypto').randomBytes(48).toString('base64url'))"
++JWT_ACCESS_SECRET=
++JWT_REFRESH_SECRET=
++JWT_ACCESS_EXPIRES_IN=15m
++JWT_REFRESH_EXPIRES_IN=7d
++
++# ---- Email (Resend) ---------------------------------------------------------
++RESEND_API_KEY=
++EMAIL_FROM="Nimbus <no-reply@your-domain.example>"
++CLIENT_EMAIL_VERIFICATION_URL=http://localhost:5173/verify-email
++CLIENT_RESET_URL=http://localhost:5173/reset-password
++PASSWORD_RESET_TOKEN_EXPIRES_IN=30m
++EMAIL_VERIFICATION_TOKEN_EXPIRES_IN=24h
++
++# ---- Passwords --------------------------------------------------------------
++BCRYPT_SALT_ROUNDS=12
++
++# ---- Nextcloud --------------------------------------------------------------
++NEXTCLOUD_AGENT_URL=http://127.0.0.1:4100
++NEXTCLOUD_AGENT_TOKEN=
++NEXTCLOUD_URL=http://127.0.0.1:8080
++# 64 hex chars:  node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
++CREDENTIAL_ENCRYPTION_KEY=
++
++# ---- Logging ----------------------------------------------------------------
++LOG_LEVEL=info
++
++# Razorpay and IDrive e2 variables: see src/config/env.ts for the full list.
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/prisma/migrations/20261007090000_add_token_revocation/migration.sql ./backend/prisma/migrations/20261007090000_add_token_revocation/migration.sql
+--- a/backend/prisma/migrations/20261007090000_add_token_revocation/migration.sql	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/prisma/migrations/20261007090000_add_token_revocation/migration.sql	2026-10-13 05:51:01.220965645 +0000
+@@ -0,0 +1,5 @@
++-- AlterTable
++ALTER TABLE "users" ADD COLUMN "tokens_valid_after" TIMESTAMP(3);
++
++-- AlterTable
++ALTER TABLE "sessions" ADD COLUMN "rotated_at" TIMESTAMP(3);
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/prisma/schema.prisma ./backend/prisma/schema.prisma
+--- a/backend/prisma/schema.prisma	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/prisma/schema.prisma	2026-10-13 05:51:01.224998747 +0000
+@@ -133,6 +133,11 @@
+   phoneNumber  String? @map("phone_number")
+   emailVerifiedAt DateTime? @map("email_verified_at")
+   passwordHash String     @map("password_hash")
++  // Access tokens issued before this instant are rejected by requireAuth,
++  // even though they have not expired yet. Bumped on password change/reset,
++  // refresh-token reuse, suspension and account deletion so a stolen access
++  // token dies immediately instead of living out its 15 minutes.
++  tokensValidAfter DateTime? @map("tokens_valid_after")
+   role         Role       @default(USER)
+   status       UserStatus @default(ACTIVE)
+   avatarData   String?    @map("avatar_data") @db.Text
+@@ -394,6 +399,12 @@
+   refreshToken String   @unique @map("refresh_token")
+   expiresAt    DateTime @map("expires_at")
+ 
++  // Set when this refresh token is exchanged for a new one. The row is kept
++  // (instead of deleted) for a short while so that presenting an already
++  // rotated token can be recognised as reuse/theft and answered by revoking
++  // every session of that user. See authService.refresh.
++  rotatedAt DateTime? @map("rotated_at")
++
+   // Added for Phase 10's admin "active sessions" view — captured once at
+   // issueTokenPair() time (see auth.service.ts), never updated afterward.
+   // Best-effort only: both come straight from request headers, so a
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/scripts/decouple-nextcloud-passwords.ts ./backend/scripts/decouple-nextcloud-passwords.ts
+--- a/backend/scripts/decouple-nextcloud-passwords.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/scripts/decouple-nextcloud-passwords.ts	2026-10-13 05:51:01.228896280 +0000
+@@ -0,0 +1,65 @@
++/**
++ * One-off migration: stop Nextcloud accounts from sharing the user's Nimbus
++ * password.
++ *
++ * Before this change, registration passed the user's real password to
++ * Nextcloud, so every existing Nextcloud account has that password as its
++ * login. New accounts already get an independent random secret. This script
++ * brings existing accounts in line by giving each one a fresh random
++ * Nextcloud password and re-minting its WebDAV app password, which is stored
++ * (encrypted) exactly like before.
++ *
++ * It needs no user input: the agent's change-password operation sets the
++ * Nextcloud password without knowing the old one.
++ *
++ *   npx tsx scripts/decouple-nextcloud-passwords.ts            # dry run (default)
++ *   npx tsx scripts/decouple-nextcloud-passwords.ts --apply    # do it
++ *
++ * Safe to re-run (it just rotates again). Back up the database first. If a
++ * user's DB update fails after Nextcloud was changed, their storage
++ * connection can be fixed from Settings via the existing "repair" action.
++ */
++import { prisma } from '../src/database/prisma'
++import { nextcloudService } from '../src/services/NextcloudService'
++import { encrypt } from '../src/utils/encryption'
++import { generateStorageSecret } from '../src/utils/token'
++
++const apply = process.argv.includes('--apply')
++
++async function main() {
++  const users = await prisma.user.findMany({
++    where: { nextcloudUsername: { not: null } },
++    select: { id: true, email: true, nextcloudUsername: true },
++    orderBy: { createdAt: 'asc' },
++  })
++
++  console.log(`${apply ? 'APPLYING to' : 'DRY RUN for'} ${users.length} account(s) with a Nextcloud username.`)
++  if (!apply) {
++    console.log('Nothing will be changed. Re-run with --apply to rotate.')
++    return
++  }
++
++  let ok = 0
++  const failed: string[] = []
++  for (const user of users) {
++    try {
++      const { webdavPassword } = await nextcloudService.changePassword(user.nextcloudUsername!, generateStorageSecret())
++      await prisma.user.update({
++        where: { id: user.id },
++        data: { nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword) },
++      })
++      ok++
++      console.log(`✓ ${user.id}`)
++    } catch (err) {
++      failed.push(user.id)
++      console.error(`✗ ${user.id}: ${err instanceof Error ? err.message : err}`)
++    }
++  }
++
++  console.log(`\nDone. ${ok} rotated, ${failed.length} failed.`)
++  if (failed.length) console.log('Failed ids (re-run, or use Settings → repair for each):', failed.join(', '))
++}
++
++main()
++  .catch((err) => { console.error(err); process.exitCode = 1 })
++  .finally(() => prisma.$disconnect())
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/app.ts ./backend/src/app.ts
+--- a/backend/src/app.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/app.ts	2026-10-13 05:51:01.232602961 +0000
+@@ -8,11 +8,15 @@
+ import webhookRoutes from './routes/webhook.routes'
+ import { notFoundMiddleware } from './middleware/notFound.middleware'
+ import { errorMiddleware } from './middleware/error.middleware'
++import { globalApiRateLimiter } from './middleware/rateLimiter.middleware'
+ 
+ export function createApp() {
+   const app = express()
+ 
+   app.disable('x-powered-by')
++  // Without this, req.ip behind a proxy/load balancer is the proxy's address
++  // and every user shares one rate-limit bucket. See TRUST_PROXY_HOPS in env.ts.
++  app.set('trust proxy', env.TRUST_PROXY_HOPS)
+   app.use(
+   helmet({
+     contentSecurityPolicy: {
+@@ -46,6 +50,7 @@
+   app.use(express.urlencoded({ extended: true }))
+   app.use(cookieParser())
+ 
++  app.use('/api', globalApiRateLimiter)
+   app.use('/api', routes)
+ 
+   app.use(notFoundMiddleware)
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/config/env.ts ./backend/src/config/env.ts
+--- a/backend/src/config/env.ts	2026-09-26 19:53:28.000000000 +0000
++++ b/backend/src/config/env.ts	2026-10-13 05:51:01.236405295 +0000
+@@ -2,7 +2,18 @@
+ import { z } from 'zod'
+ 
+ const envSchema = z.object({
+-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
++  // Deliberately NO default. A forgotten NODE_ENV used to fall back to
++  // 'development', which is the mode that relaxed production-only safety
++  // checks. Failing to boot is the safer way to find out it was never set.
++  NODE_ENV: z.enum(['development', 'test', 'production'], {
++    errorMap: () => ({ message: "NODE_ENV must be set explicitly to 'development', 'test' or 'production'" }),
++  }),
++  // How many reverse-proxy hops sit in front of this app (Railway/Render/
++  // nginx = 1). Without it, req.ip is the proxy's address, so every user
++  // shares one rate-limit bucket. Set 0 if the app is exposed directly,
++  // otherwise a client can spoof X-Forwarded-For to dodge rate limits.
++  GLOBAL_RATE_LIMIT_PER_15MIN: z.coerce.number().int().min(50).default(1500),
++  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
+   PORT: z.coerce.number().default(4000),
+   CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
+ 
+@@ -103,6 +114,15 @@
+     })
+   }
+   if (values.NODE_ENV === 'production') {
++    for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const) {
++      const value = values[key]
++      if (value.length < 32 || /replace-with|changeme|example|secret-not-for/i.test(value)) {
++        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} must be a random string of at least 32 characters in production (not a placeholder)` })
++      }
++    }
++    if (values.JWT_ACCESS_SECRET === values.JWT_REFRESH_SECRET) {
++      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET' })
++    }
+     if (!values.RESEND_API_KEY) {
+       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required in production' })
+     }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/controllers/auth.controller.ts ./backend/src/controllers/auth.controller.ts
+--- a/backend/src/controllers/auth.controller.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/controllers/auth.controller.ts	2026-10-13 05:51:01.240239183 +0000
+@@ -5,6 +5,7 @@
+ import { sendSuccess } from '../utils/response'
+ import { ApiError } from '../utils/ApiError'
+ import { env } from '../config/env'
++import { logger } from '../config/logger'
+ 
+ const REFRESH_COOKIE_NAME = 'nimbus_refresh_token'
+ 
+@@ -67,14 +68,16 @@
+   }),
+ 
+   forgotPassword: asyncHandler(async (req: Request, res: Response) => {
+-    const { devToken } = await authService.forgotPassword(req.body)
++    // Fire-and-forget: the work (DB writes + a call to the mail provider) takes
++    // visibly longer for a registered address than for an unknown one, so
++    // awaiting it would let a caller tell them apart by response time.
++    void authService.forgotPassword(req.body).catch((err) => {
++      logger.error({ err }, 'forgotPassword background task failed')
++    })
+ 
+-    // Same response whether or not the email is registered — never reveal
+-    // which one it was.
++    // Same response whether or not the email is registered.
+     return sendSuccess(res, {
+       message: 'If an account exists for that email, a reset link has been sent.',
+-      // Only present outside production when no mail transport is configured.
+-      ...(devToken ? { devToken } : {}),
+     })
+   }),
+ 
+@@ -85,7 +88,9 @@
+   }),
+ 
+   resendVerificationEmail: asyncHandler(async (req: Request, res: Response) => {
+-    await authService.resendVerificationEmail(req.body.email)
++    void authService.resendVerificationEmail(req.body.email).catch((err) => {
++      logger.error({ err }, 'resendVerificationEmail background task failed')
++    })
+     return sendSuccess(res, { message: 'If the account exists and is not verified, a verification email has been sent.' })
+   }),
+ 
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/controllers/files.controller.ts ./backend/src/controllers/files.controller.ts
+--- a/backend/src/controllers/files.controller.ts	2026-10-04 12:50:00.000000000 +0000
++++ b/backend/src/controllers/files.controller.ts	2026-10-13 05:51:01.248234322 +0000
+@@ -134,6 +134,10 @@
+     res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
+     res.setHeader('Content-Disposition', 'inline')
+     res.setHeader('X-Content-Type-Options', 'nosniff')
++    // User-uploaded HTML/SVG must never run script in this API's origin, even
++    // if someone navigates to a preview URL directly: sandbox + no resources.
++    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox")
++    res.setHeader('Cross-Origin-Resource-Policy', 'same-site')
+     if (stat.size) res.setHeader('Content-Length', String(stat.size))
+     stream.on('error', () => res.end())
+     stream.pipe(res)
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/controllers/user.controller.ts ./backend/src/controllers/user.controller.ts
+--- a/backend/src/controllers/user.controller.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/controllers/user.controller.ts	2026-10-13 05:51:01.252158035 +0000
+@@ -4,6 +4,7 @@
+ import { sendSuccess } from '../utils/response'
+ import { notificationService } from '../services/notification.service'
+ import { authService } from '../services/auth.service'
++import { accountDeletionService } from '../services/accountDeletion.service'
+ import { ApiError } from '../utils/ApiError'
+ 
+ export const userController = {
+@@ -17,6 +18,12 @@
+     return sendSuccess(res, { message: 'Password updated successfully.' })
+   }),
+ 
++  deleteAccount: asyncHandler(async (req: Request, res: Response) => {
++    await accountDeletionService.deleteOwnAccount(req.user!.sub, req.body.password)
++    res.clearCookie('nimbus_refresh_token', { path: '/api/auth' })
++    return sendSuccess(res, { deleted: true })
++  }),
++
+   repairWebdavPassword: asyncHandler(async (req: Request, res: Response) => {
+     await authService.repairWebdavPassword(req.user!.sub, req.body.currentPassword)
+     return sendSuccess(res, { message: 'Storage connection repaired successfully.' })
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/middleware/auth.middleware.ts ./backend/src/middleware/auth.middleware.ts
+--- a/backend/src/middleware/auth.middleware.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/src/middleware/auth.middleware.ts	2026-10-13 05:51:01.256035095 +0000
+@@ -1,10 +1,15 @@
+ import { NextFunction, Request, Response } from 'express'
+ import { ApiError } from '../utils/ApiError'
+ import { verifyAccessToken } from '../utils/jwt'
++import { userRepository } from '../repositories/user.repository'
+ 
+-// Reads a Bearer access token, verifies it, and attaches the decoded
+-// payload to req.user. Routes behind this can trust req.user is present.
+-export function requireAuth(req: Request, _res: Response, next: NextFunction) {
++// Verifies the Bearer access token AND that the account behind it is still
++// allowed to act. A JWT alone only proves it was issued at some point; this
++// re-checks, on every request, that the user still exists, is not suspended,
++// has a verified email, and has not had their tokens revoked since the token
++// was issued (password change/reset, refresh-token theft, suspension).
++// One indexed primary-key read per request.
++export async function requireAuth(req: Request, _res: Response, next: NextFunction) {
+   const header = req.headers.authorization
+   if (!header || !header.startsWith('Bearer ')) {
+     return next(ApiError.unauthorized('Missing or malformed Authorization header'))
+@@ -12,11 +17,31 @@
+ 
+   const token = header.slice('Bearer '.length).trim()
+ 
++  let payload
+   try {
+-    const payload = verifyAccessToken(token)
+-    req.user = payload
+-    next()
++    payload = verifyAccessToken(token)
+   } catch {
+-    next(ApiError.unauthorized('Invalid or expired access token'))
++    return next(ApiError.unauthorized('Invalid or expired access token'))
++  }
++
++  try {
++    const state = await userRepository.findAuthState(payload.sub)
++    // Deleted account: same answer as a bad token, nothing more to learn.
++    if (!state) return next(ApiError.unauthorized('Invalid or expired access token'))
++
++    if (state.tokensValidAfter && payload.iat < Math.floor(state.tokensValidAfter.getTime() / 1000)) {
++      return next(ApiError.unauthorized('Invalid or expired access token'))
++    }
++    if (state.status === 'SUSPENDED') {
++      return next(ApiError.forbidden('This account has been suspended. Contact support for help.'))
++    }
++    if (!state.emailVerifiedAt) {
++      return next(ApiError.forbidden('Please verify your email address before continuing.'))
++    }
++
++    req.user = payload
++    return next()
++  } catch (err) {
++    return next(err)
+   }
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/middleware/error.middleware.ts ./backend/src/middleware/error.middleware.ts
+--- a/backend/src/middleware/error.middleware.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/src/middleware/error.middleware.ts	2026-10-13 05:51:01.259753665 +0000
+@@ -37,6 +37,9 @@
+ 
+   logger.error({ err, reqId: req.id }, 'Unhandled error')
+ 
+-  const message = env.NODE_ENV === 'production' ? 'Internal server error' : (err as Error)?.message
++  // Raw error text can contain SQL, file paths or upstream URLs. Show it only
++  // when NODE_ENV is explicitly 'development'; every other value (including
++  // a misconfigured one) gets the generic message.
++  const message = env.NODE_ENV === 'development' ? (err as Error)?.message : 'Internal server error'
+   return sendError(res, 500, message ?? 'Internal server error')
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/middleware/rateLimiter.middleware.ts ./backend/src/middleware/rateLimiter.middleware.ts
+--- a/backend/src/middleware/rateLimiter.middleware.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/src/middleware/rateLimiter.middleware.ts	2026-10-13 05:51:01.368739771 +0000
+@@ -1,4 +1,6 @@
++import { Request } from 'express'
+ import rateLimit from 'express-rate-limit'
++import { env } from '../config/env'
+ import { sendError } from '../utils/response'
+ 
+ // Throttles login/register specifically — generous enough for real users
+@@ -55,3 +57,95 @@
+     sendError(res, 429, 'Too many submissions. Please try again later.')
+   },
+ })
++
++const FIFTEEN_MIN = 15 * 60 * 1000
++
++// Normalised so "A@x.com" and "a@x.com " share one bucket. Falls back to the
++// client IP when the body has no usable email (the validator rejects those
++// later anyway).
++function emailKey(prefix: string) {
++  return (req: Request): string => {
++    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
++    return email ? `${prefix}:${email}` : `${prefix}:ip:${req.ip}`
++  }
++}
++
++// Backstop for the whole API, keyed by IP. Deliberately generous (chunked
++// uploads and a busy dashboard make many legitimate requests); its job is to
++// stop floods and scraping, while the stricter limiters below guard the
++// endpoints attackers actually target. In-memory store: counts are per
++// process, so behind several instances use a shared store (e.g. Redis).
++export const globalApiRateLimiter = rateLimit({
++  windowMs: FIFTEEN_MIN,
++  limit: env.GLOBAL_RATE_LIMIT_PER_15MIN,
++  standardHeaders: true,
++  legacyHeaders: false,
++  skip: (req) => req.method === 'OPTIONS' || req.path === '/health',
++  handler: (_req, res) => {
++    sendError(res, 429, 'Too many requests. Please slow down and try again shortly.')
++  },
++})
++
++// Per-ACCOUNT login throttle, on top of the per-IP authRateLimiter. Stops
++// one attacker rotating IPs against a single victim. Only failures count, so
++// the real owner logging in successfully is never locked out by their own
++// successful sessions.
++export const loginAccountRateLimiter = rateLimit({
++  windowMs: FIFTEEN_MIN,
++  limit: 10,
++  standardHeaders: true,
++  legacyHeaders: false,
++  skipSuccessfulRequests: true,
++  keyGenerator: emailKey('login'),
++  handler: (_req, res) => {
++    sendError(res, 429, 'Too many failed attempts for this account. Please try again in a few minutes.')
++  },
++})
++
++// Per-address cap on reset/verification emails, so one inbox cannot be
++// flooded from many IPs. Returns the normal generic 200 shape of those
++// endpoints' callers would see only via the message; 429 here is keyed on
++// the address the attacker already supplied, so it leaks nothing new.
++export const emailActionRateLimiter = rateLimit({
++  windowMs: 60 * 60 * 1000,
++  limit: 3,
++  standardHeaders: true,
++  legacyHeaders: false,
++  keyGenerator: emailKey('email-action'),
++  handler: (_req, res) => {
++    sendError(res, 429, 'Too many requests for this email address. Please try again later.')
++  },
++})
++
++// Token-bearing endpoints (reset-password, verify-email) get a per-IP limit
++// separate from the mail-sending limiter so guessing tokens is also capped.
++// Tokens are 256-bit so guessing is infeasible; this is defence in depth.
++
++// Authenticated but sensitive actions (change password, delete account,
++// repair storage credentials) — keyed by USER, not IP, so it holds even when
++// a stolen token is used from many addresses. Must run after requireAuth.
++export const sensitiveActionRateLimiter = rateLimit({
++  windowMs: FIFTEEN_MIN,
++  limit: 5,
++  standardHeaders: true,
++  legacyHeaders: false,
++  keyGenerator: (req) => `sensitive:${req.user?.sub ?? `ip:${req.ip}`}`,
++  handler: (_req, res) => {
++    sendError(res, 429, 'Too many attempts. Please wait a few minutes and try again.')
++  },
++})
++
++// Public share links can be password-protected. Without this the password is
++// guessable at full speed. Keyed by link AND IP so one person hammering a link
++// can't lock everyone else out of it; successful downloads don't count.
++export const publicShareRateLimiter = rateLimit({
++  windowMs: FIFTEEN_MIN,
++  limit: 10,
++  standardHeaders: true,
++  legacyHeaders: false,
++  skipSuccessfulRequests: true,
++  keyGenerator: (req) => `share:${req.params.token}:${req.ip}`,
++  handler: (_req, res) => {
++    sendError(res, 429, 'Too many attempts for this link. Please try again later.')
++  },
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/middleware/trustedOrigin.middleware.ts ./backend/src/middleware/trustedOrigin.middleware.ts
+--- a/backend/src/middleware/trustedOrigin.middleware.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/src/middleware/trustedOrigin.middleware.ts	2026-10-13 05:51:01.376615334 +0000
+@@ -0,0 +1,18 @@
++import { NextFunction, Request, Response } from 'express'
++import { env } from '../config/env'
++import { ApiError } from '../utils/ApiError'
++
++// The refresh cookie is SameSite=None in production (frontend and API live on
++// different sites), so the browser attaches it to cross-site requests. That
++// makes /refresh-token and /logout CSRF-able: a hostile page could force them.
++// Browsers always send an Origin header on cross-site POSTs, so rejecting any
++// Origin other than our own frontend closes that. Requests with no Origin
++// (curl, server-to-server, same-origin GET navigations) are not browser CSRF
++// and stay allowed — they cannot carry a victim's cookie.
++export function requireTrustedOrigin(req: Request, _res: Response, next: NextFunction) {
++  const origin = req.headers.origin
++  if (origin && origin !== env.CLIENT_ORIGIN) {
++    return next(ApiError.forbidden('Request origin not allowed'))
++  }
++  next()
++}
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/repositories/emailVerificationToken.repository.ts ./backend/src/repositories/emailVerificationToken.repository.ts
+--- a/backend/src/repositories/emailVerificationToken.repository.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/repositories/emailVerificationToken.repository.ts	2026-10-13 05:51:01.380535554 +0000
+@@ -15,4 +15,27 @@
+   deleteAllForUserExcept(userId: string, tokenHash: string) {
+     return prisma.emailVerificationToken.deleteMany({ where: { userId, tokenHash: { not: tokenHash } } })
+   },
++
++  // Atomic single-use claim. findValidByHash + markUsed as two steps lets two
++  // concurrent requests both succeed with the same token; this UPDATE ... WHERE
++  // usedAt IS NULL succeeds for exactly one of them. Returns the token row's
++  // userId, or null if it was invalid, expired or already used.
++  async consumeByHash(tokenHash: string): Promise<{ userId: string } | null> {
++    const row = await prisma.emailVerificationToken.findFirst({
++      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
++      select: { id: true, userId: true },
++    })
++    if (!row) return null
++    const claimed = await prisma.emailVerificationToken.updateMany({
++      where: { id: row.id, usedAt: null },
++      data: { usedAt: new Date() },
++    })
++    return claimed.count === 1 ? { userId: row.userId } : null
++  },
++
++  deleteExpired() {
++    return prisma.emailVerificationToken.deleteMany({
++      where: { OR: [{ expiresAt: { lt: new Date() } }, { usedAt: { not: null } }] },
++    })
++  },
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/repositories/passwordResetToken.repository.ts ./backend/src/repositories/passwordResetToken.repository.ts
+--- a/backend/src/repositories/passwordResetToken.repository.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/repositories/passwordResetToken.repository.ts	2026-10-13 05:51:01.384277594 +0000
+@@ -30,4 +30,27 @@
+   deleteAllForUserExcept(userId: string, tokenHash: string) {
+     return prisma.passwordResetToken.deleteMany({ where: { userId, tokenHash: { not: tokenHash } } })
+   },
++
++  // Atomic single-use claim. findValidByHash + markUsed as two steps lets two
++  // concurrent requests both succeed with the same token; this UPDATE ... WHERE
++  // usedAt IS NULL succeeds for exactly one of them. Returns the token row's
++  // userId, or null if it was invalid, expired or already used.
++  async consumeByHash(tokenHash: string): Promise<{ userId: string } | null> {
++    const row = await prisma.passwordResetToken.findFirst({
++      where: { tokenHash, usedAt: null, expiresAt: { gt: new Date() } },
++      select: { id: true, userId: true },
++    })
++    if (!row) return null
++    const claimed = await prisma.passwordResetToken.updateMany({
++      where: { id: row.id, usedAt: null },
++      data: { usedAt: new Date() },
++    })
++    return claimed.count === 1 ? { userId: row.userId } : null
++  },
++
++  deleteExpired() {
++    return prisma.passwordResetToken.deleteMany({
++      where: { OR: [{ expiresAt: { lt: new Date() } }, { usedAt: { not: null } }] },
++    })
++  },
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/repositories/session.repository.ts ./backend/src/repositories/session.repository.ts
+--- a/backend/src/repositories/session.repository.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/repositories/session.repository.ts	2026-10-13 05:51:01.388055949 +0000
+@@ -25,6 +25,37 @@
+       where: {
+         refreshToken: refreshTokenHash,
+         expiresAt: { gt: new Date() },
++        rotatedAt: null,
++      },
++    })
++  },
++
++  // Unlike findValidByHash this also returns rows that were already rotated,
++  // which is exactly what reuse detection needs to see.
++  findAnyUnexpiredByHash(refreshTokenHash: string) {
++    return prisma.session.findFirst({
++      where: { refreshToken: refreshTokenHash, expiresAt: { gt: new Date() } },
++    })
++  },
++
++  // Atomic claim: only one concurrent caller can flip rotatedAt from null.
++  async markRotated(id: string): Promise<boolean> {
++    const res = await prisma.session.updateMany({
++      where: { id, rotatedAt: null },
++      data: { rotatedAt: new Date() },
++    })
++    return res.count === 1
++  },
++
++  // Expired sessions are useless; rotated ones are kept only long enough to
++  // catch a replayed token, then dropped.
++  deleteStale(rotatedRetentionMs: number) {
++    return prisma.session.deleteMany({
++      where: {
++        OR: [
++          { expiresAt: { lt: new Date() } },
++          { rotatedAt: { lt: new Date(Date.now() - rotatedRetentionMs) } },
++        ],
+       },
+     })
+   },
+@@ -44,7 +75,7 @@
+   // comment above on why row-existence-plus-unexpired IS validity here).
+   findManyForUser(userId: string) {
+     return prisma.session.findMany({
+-      where: { userId, expiresAt: { gt: new Date() } },
++      where: { userId, expiresAt: { gt: new Date() }, rotatedAt: null },
+       orderBy: { createdAt: 'desc' },
+     })
+   },
+@@ -62,6 +93,6 @@
+   // repository-only-touches-prisma discipline every other service in this
+   // codebase already follows.
+   countActive(): Promise<number> {
+-    return prisma.session.count({ where: { expiresAt: { gt: new Date() } } })
++    return prisma.session.count({ where: { expiresAt: { gt: new Date() }, rotatedAt: null } })
+   },
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/repositories/user.repository.ts ./backend/src/repositories/user.repository.ts
+--- a/backend/src/repositories/user.repository.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/repositories/user.repository.ts	2026-10-13 05:51:01.391872336 +0000
+@@ -14,6 +14,20 @@
+     return prisma.user.findUnique({ where: { id }, include: { plan: true } })
+   },
+ 
++  // Minimal, hot-path read for requireAuth: runs on every authenticated
++  // request, so it selects only what the gate needs (no plan join).
++  findAuthState(id: string) {
++    return prisma.user.findUnique({
++      where: { id },
++      select: { id: true, status: true, emailVerifiedAt: true, tokensValidAfter: true },
++    })
++  },
++
++  // Invalidates every access token issued before now (see requireAuth).
++  revokeAccessTokens(id: string) {
++    return prisma.user.update({ where: { id }, data: { tokensValidAfter: new Date() }, select: { id: true } })
++  },
++
+   create(data: Prisma.UserCreateInput): Promise<UserWithPlan> {
+     return prisma.user.create({ data, include: { plan: true } })
+   },
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/routes/auth.routes.ts ./backend/src/routes/auth.routes.ts
+--- a/backend/src/routes/auth.routes.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/src/routes/auth.routes.ts	2026-10-13 05:51:01.395736299 +0000
+@@ -2,7 +2,8 @@
+ import { authController } from '../controllers/auth.controller'
+ import { validate } from '../middleware/validate.middleware'
+ import { requireAuth } from '../middleware/auth.middleware'
+-import { authRateLimiter, passwordResetRateLimiter } from '../middleware/rateLimiter.middleware'
++import { requireTrustedOrigin } from '../middleware/trustedOrigin.middleware'
++import { authRateLimiter, passwordResetRateLimiter, loginAccountRateLimiter, emailActionRateLimiter } from '../middleware/rateLimiter.middleware'
+ import { registerSchema, loginSchema, forgotPasswordSchema, verifyEmailSchema, resendVerificationSchema } from '../validators/auth.validator'
+ import { resetPasswordSchema } from '../validators/account.validator'
+ 
+@@ -10,17 +11,18 @@
+ 
+ router.post('/register', authRateLimiter, validate(registerSchema), authController.register)
+ router.post('/verify-email', passwordResetRateLimiter, validate(verifyEmailSchema), authController.verifyEmail)
+-router.post('/resend-verification', passwordResetRateLimiter, validate(resendVerificationSchema), authController.resendVerificationEmail)
+-router.post('/login', authRateLimiter, validate(loginSchema), authController.login)
+-router.post('/logout', authController.logout)
++router.post('/resend-verification', passwordResetRateLimiter, emailActionRateLimiter, validate(resendVerificationSchema), authController.resendVerificationEmail)
++router.post('/login', authRateLimiter, loginAccountRateLimiter, validate(loginSchema), authController.login)
++router.post('/logout', requireTrustedOrigin, authController.logout)
+ router.post('/reset-password', passwordResetRateLimiter, validate(resetPasswordSchema), authController.resetPassword)
+ router.post(
+   '/forgot-password',
+   passwordResetRateLimiter,
++  emailActionRateLimiter,
+   validate(forgotPasswordSchema),
+   authController.forgotPassword
+ )
+ router.get('/me', requireAuth, authController.me)
+-router.post('/refresh-token', authController.refresh)
++router.post('/refresh-token', requireTrustedOrigin, authController.refresh)
+ 
+ export default router
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/routes/share.routes.ts ./backend/src/routes/share.routes.ts
+--- a/backend/src/routes/share.routes.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/src/routes/share.routes.ts	2026-10-13 05:51:01.399536847 +0000
+@@ -3,8 +3,9 @@
+ import {shareController} from '../controllers/share.controller'
+ import {requireAuth} from '../middleware/auth.middleware'
+ import {validate} from '../middleware/validate.middleware'
++import {publicShareRateLimiter} from '../middleware/rateLimiter.middleware'
+ const r=Router()
+-r.get('/public/:token',shareController.info);r.post('/public/:token/download',shareController.download)
++r.get('/public/:token',shareController.info);r.post('/public/:token/download',publicShareRateLimiter,shareController.download)
+ r.use(requireAuth)
+ r.post('/',validate(z.object({body:z.object({path:z.string().min(1),password:z.string().min(4).max(128).optional(),expireDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional()})})),shareController.create)
+ r.get('/',shareController.list);r.delete('/:id',shareController.revoke)
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/routes/user.routes.ts ./backend/src/routes/user.routes.ts
+--- a/backend/src/routes/user.routes.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/src/routes/user.routes.ts	2026-10-13 05:51:01.403119158 +0000
+@@ -4,6 +4,7 @@
+ import { userController } from '../controllers/user.controller'
+ import { requireAuth } from '../middleware/auth.middleware'
+ import { validate } from '../middleware/validate.middleware'
++import { sensitiveActionRateLimiter } from '../middleware/rateLimiter.middleware'
+ import { updateProfileSchema } from '../validators/auth.validator'
+ import { changePasswordSchema, notificationPreferencesSchema } from '../validators/account.validator'
+ 
+@@ -14,8 +15,9 @@
+ router.patch('/me', validate(updateProfileSchema), userController.updateProfile)
+ router.put('/me/avatar', upload.single('avatar'), userController.updateAvatar)
+ router.delete('/me/avatar', userController.removeAvatar)
+-router.post('/me/password', validate(changePasswordSchema), userController.changePassword)
+-router.post('/me/webdav/repair', validate(z.object({ body: z.object({ currentPassword: z.string().min(1) }) })), userController.repairWebdavPassword)
++router.post('/me/password', sensitiveActionRateLimiter, validate(changePasswordSchema), userController.changePassword)
++router.post('/me/webdav/repair', sensitiveActionRateLimiter, validate(z.object({ body: z.object({ currentPassword: z.string().min(1) }) })), userController.repairWebdavPassword)
++router.delete('/me', sensitiveActionRateLimiter, validate(z.object({ body: z.object({ password: z.string().min(1) }) })), userController.deleteAccount)
+ router.get('/me/notifications', userController.getNotifications)
+ router.put('/me/notifications', validate(notificationPreferencesSchema), userController.updateNotifications)
+ export default router
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/server.ts ./backend/src/server.ts
+--- a/backend/src/server.ts	2026-10-04 12:50:04.000000000 +0000
++++ b/backend/src/server.ts	2026-10-13 05:51:01.406910972 +0000
+@@ -2,6 +2,7 @@
+ import { env } from './config/env'
+ import { logger } from './config/logger'
+ import { connectDatabase, disconnectDatabase } from './database/prisma'
++import { runAuthCleanup } from './services/authCleanup.service'
+ 
+ async function bootstrap() {
+   await connectDatabase()
+@@ -22,6 +23,13 @@
+   server.headersTimeout = 60_000
+   server.keepAliveTimeout = 65_000
+ 
++  // Housekeeping for auth tables: expired/rotated sessions and used or expired
++  // reset/verification tokens. Without it they accumulate forever. unref() so
++  // the timer never keeps the process alive during shutdown.
++  void runAuthCleanup()
++  const cleanupTimer = setInterval(() => void runAuthCleanup(), 60 * 60 * 1000)
++  cleanupTimer.unref()
++
+   const shutdown = async (signal: string) => {
+     logger.info(`${signal} received — shutting down gracefully`)
+     server.close(async () => {
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/accountDeletion.service.ts ./backend/src/services/accountDeletion.service.ts
+--- a/backend/src/services/accountDeletion.service.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/src/services/accountDeletion.service.ts	2026-10-13 05:51:01.410816817 +0000
+@@ -0,0 +1,75 @@
++import { userRepository } from '../repositories/user.repository'
++import { sessionRepository } from '../repositories/session.repository'
++import { billingSubscriptionRepository } from '../repositories/billingSubscription.repository'
++import { nextcloudService, NextcloudApiError } from './NextcloudService'
++import { razorpayService } from './RazorpayService'
++import { comparePassword } from '../utils/password'
++import { ApiError } from '../utils/ApiError'
++import { logger } from '../config/logger'
++
++const TERMINAL_BILLING_STATUSES = new Set(['CANCELLED', 'COMPLETED', 'EXPIRED'])
++
++/**
++ * The one place an account is torn down, shared by self-service deletion and
++ * admin deletion so the two cannot drift apart.
++ *
++ * Order matters, and every external step fails CLOSED (abort, leave the
++ * account in place, let the caller retry) rather than leaving something
++ * dangling:
++ *   1. Revoke every session and live access token, so nobody keeps acting as
++ *      the user while deletion is in flight.
++ *   2. Cancel recurring Razorpay billing. Deleting only our rows would leave
++ *      the customer's autopay running with no account to show for it.
++ *   3. Delete the Nextcloud account (and with it all their files).
++ *   4. Delete the Postgres row; sessions, shares, tokens, subscriptions and
++ *      payments cascade (see schema.prisma — note payment history goes too).
++ */
++export async function deleteAccountData(target: { id: string; nextcloudUsername: string | null }): Promise<void> {
++  await userRepository.revokeAccessTokens(target.id)
++  await sessionRepository.deleteAllForUser(target.id)
++
++  const billingRows = await billingSubscriptionRepository.findByUserId(target.id)
++  for (const row of billingRows) {
++    if (TERMINAL_BILLING_STATUSES.has(row.status)) continue
++    try {
++      await razorpayService.cancelSubscription(row.razorpaySubscriptionId, false)
++      await billingSubscriptionRepository.updateStatus(row.id, 'CANCELLED')
++    } catch (err) {
++      logger.error({ userId: target.id, billingSubscriptionId: row.id, err }, 'Could not cancel Razorpay subscription — account NOT deleted')
++      throw ApiError.serviceUnavailable('Could not cancel your subscription, so the account was not deleted. Please try again.')
++    }
++  }
++
++  if (target.nextcloudUsername) {
++    try {
++      await nextcloudService.deleteUser(target.nextcloudUsername)
++    } catch (err) {
++      const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
++      logger.error({ userId: target.id, detail }, 'Nextcloud account deletion failed — Postgres user NOT deleted')
++      throw ApiError.serviceUnavailable('Could not delete the storage account. Please try again.')
++    }
++  }
++
++  await userRepository.delete(target.id)
++}
++
++export const accountDeletionService = {
++  // Self-service. Re-authenticates with the password so a stolen access token
++  // alone cannot destroy an account and all its files.
++  async deleteOwnAccount(userId: string, password: string): Promise<void> {
++    const user = await userRepository.findById(userId)
++    if (!user) throw ApiError.notFound('User not found')
++
++    if (!(await comparePassword(password, user.passwordHash))) {
++      throw ApiError.unauthorized('Password is incorrect')
++    }
++    // Admin accounts are removed by another admin (which also enforces the
++    // "never delete the last admin" rule in adminService).
++    if (user.role === 'ADMIN') {
++      throw ApiError.forbidden('Admin accounts cannot be self-deleted. Ask another admin to remove it.')
++    }
++
++    await deleteAccountData(user)
++    logger.info({ userId }, 'Account deleted by its owner')
++  },
++}
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/admin.service.ts ./backend/src/services/admin.service.ts
+--- a/backend/src/services/admin.service.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/src/services/admin.service.ts	2026-10-13 05:51:01.414406715 +0000
+@@ -6,6 +6,7 @@
+ import { paymentRepository } from '../repositories/payment.repository'
+ import { planRepository } from '../repositories/plan.repository'
+ import { provisionUser } from './userProvisioning.service'
++import { deleteAccountData } from './accountDeletion.service'
+ import { reconciliationService, ReconciliationSummary } from './reconciliation.service'
+ import { nextcloudService, NextcloudApiError } from './NextcloudService'
+ import { supportService } from './support.service'
+@@ -126,13 +127,9 @@
+ 
+     const updated = await userRepository.update(id, { status })
+ 
+-    // Suspension takes effect immediately rather than only blocking future
+-    // logins: deleting every session forces a fresh login attempt, which
+-    // authService.login now rejects outright for a suspended account. An
+-    // already-issued *access* token can still work until it naturally
+-    // expires (see the UserStatus enum comment in schema.prisma) — that's
+-    // an accepted tradeoff of this backend's stateless-access-token
+-    // design, not something this endpoint can close on its own.
++    // Suspension is immediate: requireAuth re-reads the user's status on
++    // every request, so already-issued access tokens stop working at once,
++    // and deleting the sessions stops refresh as well.
+     if (status === 'SUSPENDED') {
+       await sessionRepository.deleteAllForUser(id)
+     }
+@@ -145,26 +142,9 @@
+     const target = await getRequiredUser(id)
+     await assertNotLastAdmin(target)
+ 
+-    // Delete the Nextcloud account FIRST. If that fails, abort and leave
+-    // both sides intact so the whole operation can simply be retried —
+-    // the mirror image of registration's rollback (which deletes the
+-    // JUST-created Postgres row if Nextcloud provisioning fails), but the
+-    // same underlying rule: never leave a Postgres user and its Nextcloud
+-    // account out of sync with each other.
+-    if (target.nextcloudUsername) {
+-      try {
+-        await nextcloudService.deleteUser(target.nextcloudUsername)
+-      } catch (err) {
+-        const detail = err instanceof NextcloudApiError ? err.message : 'unknown error'
+-        logger.error({ userId: id, detail }, 'Nextcloud account deletion failed — Postgres user NOT deleted')
+-        throw ApiError.serviceUnavailable('Could not delete the storage account. Please try again.')
+-      }
+-    }
+-
+-    // Cascades to that user's sessions, subscriptions, payments, and
+-    // password reset tokens automatically — all `onDelete: Cascade` in
+-    // schema.prisma — so nothing further to clean up here.
+-    await userRepository.delete(id)
++    // Shared teardown: revoke access, cancel Razorpay autopay, delete the
++    // Nextcloud account, then the Postgres row. Fails closed at each step.
++    await deleteAccountData(target)
+   },
+ 
+   // Deliberately does NOT touch `planId` or the Plan/Subscription
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/auth.service.ts ./backend/src/services/auth.service.ts
+--- a/backend/src/services/auth.service.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/src/services/auth.service.ts	2026-10-13 05:51:01.418104371 +0000
+@@ -3,13 +3,13 @@
+ import { sessionRepository } from '../repositories/session.repository'
+ import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
+ import { provisionUser } from './userProvisioning.service'
+-import { nextcloudService, NextcloudApiError } from './NextcloudService'
++import { nextcloudService } from './NextcloudService'
+ import { hashPassword } from '../utils/password'
+ import { encrypt } from '../utils/encryption'
+ import { toAuthUserDTO } from '../models/user.model'
+ import { comparePassword } from '../utils/password'
+ import { hashToken, signAccessToken, signRefreshToken, verifyRefreshToken } from '../utils/jwt'
+-import { generateRandomToken } from '../utils/token'
++import { generateRandomToken, generateStorageSecret } from '../utils/token'
+ import { ApiError } from '../utils/ApiError'
+ import { env } from '../config/env'
+ import { CURRENT_AGREEMENT_VERSION } from '../config/agreement'
+@@ -40,11 +40,41 @@
+   return { accessToken, refreshToken }
+ }
+ 
++// A refresh token that was already exchanged is normally a stolen/replayed
++// copy. A short grace window tolerates two legitimate requests racing with the
++// same cookie (two tabs, a retry) so they get a plain 401 instead of killing
++// every session the real user has.
++const REFRESH_REUSE_GRACE_MS = 10_000
++
++// Compared against when the email is unknown so a login attempt costs one
++// bcrypt either way. Without it, "no such user" returns ~instantly while a
++// real user takes ~250ms at cost 12, which reveals which emails are registered.
++let dummyHashPromise: Promise<string> | undefined
++function getDummyHash() {
++  dummyHashPromise ??= hashPassword(generateRandomToken())
++  return dummyHashPromise
++}
++
++// Kill every way a user can still act as themselves: refresh tokens (sessions)
++// and not-yet-expired access tokens (tokensValidAfter, checked by requireAuth).
++async function revokeAllAccess(userId: string) {
++  await sessionRepository.deleteAllForUser(userId)
++  await userRepository.revokeAccessTokens(userId)
++}
++
++function logVerificationLinkForLocalDev(kind: string, url: string, email: string) {
++  // Only when NODE_ENV is explicitly 'development' (it is now a required
++  // setting). Goes to the server log, never into an HTTP response.
++  if (env.NODE_ENV === 'development') {
++    logger.info({ email, url }, `[dev only] ${kind} link (not emailed)`)
++  }
++}
++
+ export const authService = {
+   async register(
+     input: RegisterInput,
+     meta?: SessionMeta
+-  ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true; devToken?: string }> {
++  ): Promise<{ user: ReturnType<typeof toAuthUserDTO>; verificationRequired: true }> {
+     if (input.agreementVersion !== CURRENT_AGREEMENT_VERSION) {
+       throw ApiError.badRequest(
+         'The Service Agreement has been updated. Please review the latest version and accept it to continue.'
+@@ -52,8 +82,8 @@
+     }
+ 
+     // Self-registration is always role USER on the seeded default plan —
+-    // see userProvisioning.service.ts, which this now shares with Phase
+-    // 10's admin-initiated account creation.
++    // see userProvisioning.service.ts, which this shares with admin-created
++    // accounts.
+     const user = await provisionUser({
+       name: input.name,
+       email: input.email,
+@@ -79,35 +109,49 @@
+     } catch (err) {
+       logger.error({ err, userId: user.id }, 'Email verification delivery failed')
+       if (env.NODE_ENV === 'production') {
+-        throw ApiError.serviceUnavailable('Account created, but we could not send the verification email. Please try again later.')
++        throw ApiError.serviceUnavailable('Account created, but we could not send the verification email. Please use "resend verification" in a few minutes.')
+       }
+-      return { user: toAuthUserDTO(user), verificationRequired: true as const, devToken: rawVerificationToken }
++      logVerificationLinkForLocalDev('verification', verificationUrl, user.email)
+     }
+ 
+-    if (user.nextcloudUsername) { try { await nextcloudService.setEmail(user.nextcloudUsername, user.email) } catch (err) { logger.warn({ userId:user.id, err }, 'Could not synchronize Nextcloud email during login') } }
++    if (user.nextcloudUsername) {
++      try {
++        await nextcloudService.setEmail(user.nextcloudUsername, user.email)
++      } catch (err) {
++        logger.warn({ userId: user.id, err }, 'Could not synchronize Nextcloud email during registration')
++      }
++    }
+ 
+     return { user: toAuthUserDTO(user), verificationRequired: true }
+   },
+ 
+-
+   async verifyEmail(token: string, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
+-    const stored = await emailVerificationTokenRepository.findValidByHash(hashToken(token))
+-    if (!stored) throw ApiError.badRequest('This email verification link is invalid or has expired.')
++    const invalid = () => ApiError.badRequest('This email verification link is invalid or has expired.')
+ 
+-    const user = await userRepository.findById(stored.userId)
+-    if (!user) throw ApiError.badRequest('This email verification link is invalid or has expired.')
++    // Atomic: two concurrent requests with the same link cannot both pass.
++    const claimed = await emailVerificationTokenRepository.consumeByHash(hashToken(token))
++    if (!claimed) throw invalid()
++
++    const user = await userRepository.findById(claimed.userId)
++    if (!user) throw invalid()
++    // A verification link must not be a way to sign in as a suspended account.
++    if (user.status === 'SUSPENDED') {
++      throw ApiError.forbidden('This account has been suspended. Contact support for help.')
++    }
+ 
+-    await userRepository.update(user.id, { emailVerifiedAt: new Date() })
+-    await emailVerificationTokenRepository.markUsed(stored.id)
++    const verifiedUser = user.emailVerifiedAt
++      ? user
++      : await userRepository.update(user.id, { emailVerifiedAt: new Date() })
+ 
+-    const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
+-    const verifiedUser = await userRepository.findById(user.id)
+-    return { user: toAuthUserDTO(verifiedUser!), accessToken, refreshToken }
++    const { accessToken, refreshToken } = await issueTokenPair(verifiedUser.id, verifiedUser.email, meta)
++    return { user: toAuthUserDTO(verifiedUser), accessToken, refreshToken }
+   },
+ 
++  // Never throws for delivery problems: success/failure here would otherwise
++  // tell the caller whether the address belongs to an unverified account.
+   async resendVerificationEmail(email: string): Promise<void> {
+     const user = await userRepository.findByEmail(email)
+-    if (!user || user.emailVerifiedAt) return
++    if (!user || user.emailVerifiedAt || user.status === 'SUSPENDED') return
+ 
+     const rawToken = generateRandomToken()
+     const tokenHash = hashToken(rawToken)
+@@ -115,13 +159,20 @@
+     await emailVerificationTokenRepository.create(user.id, tokenHash, expiresAt)
+     await emailVerificationTokenRepository.deleteAllForUserExcept(user.id, tokenHash)
+     const url = `${env.CLIENT_EMAIL_VERIFICATION_URL}?token=${encodeURIComponent(rawToken)}`
+-    await sendEmailVerificationEmail(user.email, url)
++    try {
++      await sendEmailVerificationEmail(user.email, url)
++    } catch (err) {
++      logger.error({ err, userId: user.id }, 'Verification email resend failed')
++      logVerificationLinkForLocalDev('verification', url, user.email)
++    }
+   },
++
+   async login(input: LoginInput, meta?: SessionMeta): Promise<AuthResponseDTO & { refreshToken: string }> {
+     const user = await userRepository.findByEmail(input.email)
+     // Same message whether the email doesn't exist or the password is
+     // wrong — don't leak which one it was.
+     if (!user) {
++      await comparePassword(input.password, await getDummyHash())
+       throw ApiError.unauthorized('Invalid email or password')
+     }
+ 
+@@ -158,8 +209,22 @@
+     }
+ 
+     const tokenHash = hashToken(rawRefreshToken)
+-    const stored = await sessionRepository.findValidByHash(tokenHash)
+-    if (!stored) {
++    const stored = await sessionRepository.findAnyUnexpiredByHash(tokenHash)
++    if (!stored || stored.userId !== payload.sub) {
++      throw ApiError.unauthorized('Session has expired or was already used')
++    }
++
++    // Reuse detection. This token was already exchanged for a newer one, so
++    // whoever is presenting it now is either a thief or the victim racing a
++    // thief — we cannot tell which, so everything for this user is revoked.
++    if (stored.rotatedAt) {
++      if (Date.now() - stored.rotatedAt.getTime() > REFRESH_REUSE_GRACE_MS) {
++        logger.warn(
++          { userId: stored.userId, ipAddress: meta?.ipAddress },
++          'Refresh token reuse detected — all sessions revoked'
++        )
++        await revokeAllAccess(stored.userId)
++      }
+       throw ApiError.unauthorized('Session has expired or was already used')
+     }
+ 
+@@ -168,11 +233,6 @@
+       throw ApiError.unauthorized('User no longer exists')
+     }
+ 
+-    // A user suspended after this session was issued shouldn't be able to
+-    // keep renewing it indefinitely. Refresh already does a DB read (the
+-    // findById above), so this check is effectively free here — see the
+-    // UserStatus enum comment in schema.prisma for why this isn't also
+-    // done on every single authenticated request.
+     if (!user.emailVerifiedAt) {
+       await sessionRepository.deleteByHash(tokenHash)
+       throw ApiError.forbidden('Please verify your email address before logging in.')
+@@ -183,9 +243,11 @@
+       throw ApiError.forbidden('This account has been suspended. Contact support for help.')
+     }
+ 
+-    // Rotate: delete the presented session and issue a brand new one. Limits
+-    // the blast radius if a refresh token is ever stolen from storage.
+-    await sessionRepository.deleteByHash(tokenHash)
++    // Rotate. markRotated is an atomic compare-and-set, so if two requests
++    // race with the same token exactly one proceeds and the other gets a 401.
++    if (!(await sessionRepository.markRotated(stored.id))) {
++      throw ApiError.unauthorized('Session has expired or was already used')
++    }
+     const { accessToken, refreshToken } = await issueTokenPair(user.id, user.email, meta)
+ 
+     return { user: toAuthUserDTO(user), accessToken, refreshToken }
+@@ -202,14 +264,12 @@
+     return toAuthUserDTO(user)
+   },
+ 
+-  // Always resolves the same way whether or not the email exists — the
+-  // caller (controller) returns an identical generic message either way,
+-  // so this endpoint can't be used to enumerate registered emails.
+-  async forgotPassword(input: ForgotPasswordInput): Promise<{ devToken?: string }> {
++  // Resolves the same way whether or not the email exists, and the controller
++  // does not wait for it, so neither the response body nor its timing can be
++  // used to enumerate registered emails.
++  async forgotPassword(input: ForgotPasswordInput): Promise<void> {
+     const user = await userRepository.findByEmail(input.email)
+-    if (!user) {
+-      return {}
+-    }
++    if (!user || user.status === 'SUSPENDED') return
+ 
+     const rawToken = generateRandomToken()
+     const expiresAt = new Date(Date.now() + ms(env.PASSWORD_RESET_TOKEN_EXPIRES_IN))
+@@ -221,54 +281,34 @@
+     try {
+       await sendPasswordResetEmail(user.email, resetUrl)
+     } catch (err) {
+-      // Never turn mail-delivery state into an account-enumeration side channel.
+-      // The token remains valid so a transient Resend outage can be retried by
+-      // the user without changing the account state again.
+       logger.error({ err, userId: user.id }, 'Password reset email delivery failed')
+-      if (env.NODE_ENV === 'production') return {}
++      logVerificationLinkForLocalDev('password reset', resetUrl, user.email)
+     }
+-
+-    if (env.NODE_ENV !== 'production' && (!env.RESEND_API_KEY || !env.EMAIL_FROM)) {
+-      return { devToken: rawToken }
+-    }
+-    return {}
+   },
+ 
+   async resetPassword(token: string, newPassword: string): Promise<void> {
+-    const stored = await passwordResetTokenRepository.findValidByHash(hashToken(token))
+-    if (!stored) throw ApiError.badRequest('This password reset link is invalid or has expired.')
++    const invalid = () => ApiError.badRequest('This password reset link is invalid or has expired.')
+ 
+-    const user = await userRepository.findById(stored.userId)
+-    if (!user) throw ApiError.badRequest('This password reset link is invalid or has expired.')
+-
+-    let webdavPassword: string
+-    try {
+-      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
+-      webdavPassword = result.webdavPassword
+-    } catch (err) {
+-      // Check the specific, expected case FIRST — a weak password the user
+-      // typed in isn't a failure worth an error-level log line (only
+-      // genuine outages/unexpected agent errors get logged below).
+-      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+-        throw ApiError.badRequest(
+-          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+-        )
+-      }
+-      const detail = err instanceof Error ? err.message : 'unknown error'
+-      logger.error(
+-        { userId: user.id, detail },
+-        'Nextcloud password change failed — Postgres credentials left unchanged'
+-      )
+-      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
+-    }
++    // Single-use claim happens BEFORE anything changes, atomically.
++    const claimed = await passwordResetTokenRepository.consumeByHash(hashToken(token))
++    if (!claimed) throw invalid()
++
++    const user = await userRepository.findById(claimed.userId)
++    if (!user) throw invalid()
++
++    // The Nextcloud login/WebDAV credentials are independent random secrets
++    // (see userProvisioning.service), so a Nimbus password change does not
++    // touch Nextcloud at all.
+     await userRepository.update(user.id, {
+       passwordHash: await hashPassword(newPassword),
+-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
++      // Receiving this email proves control of the mailbox.
++      ...(user.emailVerifiedAt ? {} : { emailVerifiedAt: new Date() }),
+     })
+-    await passwordResetTokenRepository.markUsed(stored.id)
+-    await sessionRepository.deleteAllForUser(user.id)
++    await revokeAllAccess(user.id)
+   },
+ 
++  // Mints fresh, random Nextcloud credentials. No user secret is involved or
++  // sent anywhere; the current password only proves the caller is the owner.
+   async repairWebdavPassword(userId: string, currentPassword: string): Promise<void> {
+     const user = await userRepository.findById(userId)
+     if (!user) throw ApiError.notFound('User not found')
+@@ -277,7 +317,7 @@
+     }
+     let webdavPassword: string
+     try {
+-      const result = await nextcloudService.refreshWebdavPassword(user.nextcloudUsername ?? user.id, currentPassword)
++      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, generateStorageSecret())
+       webdavPassword = result.webdavPassword
+     } catch (err) {
+       const detail = err instanceof Error ? err.message : 'unknown error'
+@@ -295,26 +335,7 @@
+     if (!(await comparePassword(currentPassword, user.passwordHash))) {
+       throw ApiError.unauthorized('Current password is incorrect')
+     }
+-    let webdavPassword: string
+-    try {
+-      const result = await nextcloudService.changePassword(user.nextcloudUsername ?? user.id, newPassword)
+-      webdavPassword = result.webdavPassword
+-    } catch (err) {
+-      // Check the specific, expected case FIRST — see resetPassword above
+-      // for why this comes before the generic error-log/service-unavailable path.
+-      if (err instanceof NextcloudApiError && err.code === 'PASSWORD_TOO_WEAK') {
+-        throw ApiError.badRequest(
+-          'Password is too weak. Please use a stronger password with a mix of letters, numbers, and symbols.'
+-        )
+-      }
+-      const detail = err instanceof Error ? err.message : 'unknown error'
+-      logger.error({ userId: user.id, detail }, 'Nextcloud password change failed — Postgres credentials left unchanged')
+-      throw ApiError.serviceUnavailable('Could not update the storage account password. Please try again.')
+-    }
+-    await userRepository.update(user.id, {
+-      passwordHash: await hashPassword(newPassword),
+-      nextcloudWebdavPasswordEncrypted: encrypt(webdavPassword),
+-    })
+-    await sessionRepository.deleteAllForUser(user.id)
++    await userRepository.update(user.id, { passwordHash: await hashPassword(newPassword) })
++    await revokeAllAccess(user.id)
+   },
+ }
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/authCleanup.service.ts ./backend/src/services/authCleanup.service.ts
+--- a/backend/src/services/authCleanup.service.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/src/services/authCleanup.service.ts	2026-10-13 05:51:01.421889888 +0000
+@@ -0,0 +1,24 @@
++import { sessionRepository } from '../repositories/session.repository'
++import { passwordResetTokenRepository } from '../repositories/passwordResetToken.repository'
++import { emailVerificationTokenRepository } from '../repositories/emailVerificationToken.repository'
++import { logger } from '../config/logger'
++
++// Rotated refresh-token rows are kept this long so a replayed (stolen) token
++// is still recognised as reuse rather than as an unknown token.
++export const ROTATED_SESSION_RETENTION_MS = 24 * 60 * 60 * 1000
++
++export async function runAuthCleanup(): Promise<void> {
++  try {
++    const [sessions, resets, verifications] = await Promise.all([
++      sessionRepository.deleteStale(ROTATED_SESSION_RETENTION_MS),
++      passwordResetTokenRepository.deleteExpired(),
++      emailVerificationTokenRepository.deleteExpired(),
++    ])
++    logger.info(
++      { sessions: sessions.count, resetTokens: resets.count, verificationTokens: verifications.count },
++      'Auth cleanup complete'
++    )
++  } catch (err) {
++    logger.error({ err }, 'Auth cleanup failed')
++  }
++}
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/files.service.ts ./backend/src/services/files.service.ts
+--- a/backend/src/services/files.service.ts	2026-10-04 20:00:12.000000000 +0000
++++ b/backend/src/services/files.service.ts	2026-10-13 05:51:01.425797718 +0000
+@@ -1,7 +1,7 @@
+ import { posix } from 'path'
+ import { userRepository } from '../repositories/user.repository'
+ import { webDavService, WebDavError } from './WebDavService'
+-import { sanitizeDavPath } from '../utils/davPath'
++import { sanitizeDavPath, assertSafeFileName } from '../utils/davPath'
+ import { decrypt } from '../utils/encryption'
+ import { ApiError } from '../utils/ApiError'
+ import { favoriteRepository } from '../repositories/favorite.repository'
+@@ -102,7 +102,7 @@
+   ): Promise<FileEntryDTO> {
+     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+     const folder = sanitizeDavPath(rawPath)
+-    const destination = sanitizeDavPath(posix.join(folder, filename))
++    const destination = sanitizeDavPath(posix.join(folder, assertSafeFileName(filename)))
+     try {
+       await webDavService.uploadBuffer(nextcloudUsername, davPassword, destination, data)
+       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
+@@ -124,7 +124,7 @@
+   ): Promise<FileEntryDTO> {
+     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+     const folder = sanitizeDavPath(rawPath)
+-    const destination = sanitizeDavPath(posix.join(folder, filename))
++    const destination = sanitizeDavPath(posix.join(folder, assertSafeFileName(filename)))
+     try {
+       await webDavService.uploadFromFile(nextcloudUsername, davPassword, destination, localPath, size)
+       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
+@@ -141,7 +141,7 @@
+     filename: string
+   ): Promise<{ uploadId: string; chunkSize: number }> {
+     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
++    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
+     const uploadId = randomUUID()
+     try {
+       await webDavService.startChunkedUpload(nextcloudUsername, davPassword, uploadId, destination)
+@@ -162,7 +162,7 @@
+     data: NodeJS.ReadableStream
+   ): Promise<void> {
+     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
++    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
+     try {
+       await webDavService.putUploadChunk(nextcloudUsername, davPassword, uploadId, index, destination, totalSize, chunkLength, data)
+     } catch (err) {
+@@ -178,7 +178,7 @@
+     totalSize: number
+   ): Promise<FileEntryDTO> {
+     const { nextcloudUsername, davPassword } = await getUserDavCredentials(userId)
+-    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), filename))
++    const destination = sanitizeDavPath(posix.join(sanitizeDavPath(rawPath), assertSafeFileName(filename)))
+     try {
+       await webDavService.finishChunkedUpload(nextcloudUsername, davPassword, uploadId, destination, totalSize)
+       const stat = await webDavService.stat(nextcloudUsername, davPassword, destination)
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/services/userProvisioning.service.ts ./backend/src/services/userProvisioning.service.ts
+--- a/backend/src/services/userProvisioning.service.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/src/services/userProvisioning.service.ts	2026-10-13 05:51:01.429615947 +0000
+@@ -7,6 +7,7 @@
+ import { DEFAULT_PLAN_NAME } from '../config/plans'
+ import { logger } from '../config/logger'
+ import { UserWithPlan } from '../models/user.model'
++import { generateStorageSecret } from '../utils/token'
+ 
+ export interface ProvisionUserInput {
+   name: string
+@@ -104,9 +105,13 @@
+   const nextcloudUsername = user.id
+   let webdavPassword: string
+   try {
++    // The Nextcloud account gets its own random secret, NOT the user's Nimbus
++    // password: that password is hashed here and must never be stored (or
++    // even transmitted) in a second system. All file access goes through this
++    // backend using the encrypted WebDAV app password minted below.
+     const result = await nextcloudService.createUser(
+       nextcloudUsername,
+-      input.password,
++      generateStorageSecret(),
+       plan.storageLimit,
+       input.name,
+       input.email
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/utils/davPath.ts ./backend/src/utils/davPath.ts
+--- a/backend/src/utils/davPath.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/utils/davPath.ts	2026-10-13 05:51:01.433611712 +0000
+@@ -25,6 +25,21 @@
+     throw new InvalidPathError('Path is too long')
+   }
+ 
++  // Backslashes and control characters have no legitimate use in a path here
++  // and are the usual carriers for encoding tricks (`..\\`, CRLF injection).
++  // Percent-encoded sequences such as %2e%2e are NOT decoded anywhere in this
++  // codebase: they stay literal characters of one segment and are re-encoded
++  // on the way out, so they cannot act as traversal.
++  // eslint-disable-next-line no-control-regex
++  if (/[\\\x00-\x1f\x7f]/.test(rawPath)) {
++    throw new InvalidPathError('Path contains invalid characters')
++  }
++  // Refuse (rather than silently clamp) any ".." segment, so probing attempts
++  // fail loudly instead of quietly resolving to a different location.
++  if (rawPath.split('/').includes('..')) {
++    throw new InvalidPathError('Path must not contain ".." segments')
++  }
++
+   // Anchor to root BEFORE normalizing. path.posix.normalize() collapses any
+   // ".." that would climb above a leading "/" back down to "/" — this is
+   // what actually neutralizes something like "../../../etc/passwd".
+@@ -41,3 +56,31 @@
+   // Strip a single trailing slash, except for root itself.
+   return normalized.length > 1 && normalized.endsWith('/') ? normalized.slice(0, -1) : normalized
+ }
++
++
++/**
++ * Validates a single file/folder NAME (not a path) supplied separately from a
++ * folder, e.g. the multipart `originalname` of an upload. It must stay one
++ * segment: joined onto a folder, "../../x" or "a/b" would otherwise place the
++ * file somewhere the caller did not name.
++ */
++export function assertSafeFileName(name: unknown): string {
++  if (typeof name !== 'string' || name.length === 0 || name.length > 255) {
++    throw new InvalidPathError('Invalid file name')
++  }
++  // eslint-disable-next-line no-control-regex
++  if (name === '.' || name === '..' || /[/\\\x00-\x1f\x7f]/.test(name)) {
++    throw new InvalidPathError('Invalid file name')
++  }
++  return name
++}
++
++/**
++ * Validates an opaque server-issued identifier that is placed into a URL path
++ * segment (Nextcloud trash ids). Anything containing a separator, or equal to
++ * "." / "..", could re-point the request to a different collection.
++ */
++export function isSafeSegmentId(id: string): boolean {
++  // eslint-disable-next-line no-control-regex
++  return id.length > 0 && id.length <= 512 && id !== '.' && id !== '..' && !/[/\\\x00-\x1f\x7f]/.test(id)
++}
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/utils/jwt.ts ./backend/src/utils/jwt.ts
+--- a/backend/src/utils/jwt.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/utils/jwt.ts	2026-10-13 05:51:01.437654454 +0000
+@@ -3,12 +3,23 @@
+ import { env } from '../config/env'
+ import { AuthTokenPayload } from '../types/auth.types'
+ 
++// Pinned on both sign and verify. jsonwebtoken would otherwise accept
++// whatever `alg` the token header claims among the algorithms the key type
++// allows, which is how "alg confusion" downgrades happen. Access and refresh
++// tokens also use different secrets, so one can never stand in for the other.
++const ALGORITHM = 'HS256' as const
++
++export type VerifiedAccessToken = AuthTokenPayload & { iat: number; exp: number }
++
+ export function signAccessToken(payload: AuthTokenPayload): string {
+-  return jwt.sign(payload, env.JWT_ACCESS_SECRET, { expiresIn: env.JWT_ACCESS_EXPIRES_IN })
++  return jwt.sign(payload, env.JWT_ACCESS_SECRET, {
++    algorithm: ALGORITHM,
++    expiresIn: env.JWT_ACCESS_EXPIRES_IN,
++  })
+ }
+ 
+-export function verifyAccessToken(token: string): AuthTokenPayload {
+-  return jwt.verify(token, env.JWT_ACCESS_SECRET) as AuthTokenPayload
++export function verifyAccessToken(token: string): VerifiedAccessToken {
++  return jwt.verify(token, env.JWT_ACCESS_SECRET, { algorithms: [ALGORITHM] }) as VerifiedAccessToken
+ }
+ 
+ // Refresh tokens carry a random jti (not just the user id) so each issued
+@@ -16,13 +27,14 @@
+ export function signRefreshToken(payload: AuthTokenPayload): { token: string; jti: string } {
+   const jti = randomUUID()
+   const token = jwt.sign({ ...payload, jti }, env.JWT_REFRESH_SECRET, {
++    algorithm: ALGORITHM,
+     expiresIn: env.JWT_REFRESH_EXPIRES_IN,
+   })
+   return { token, jti }
+ }
+ 
+ export function verifyRefreshToken(token: string): AuthTokenPayload & { jti: string } {
+-  return jwt.verify(token, env.JWT_REFRESH_SECRET) as AuthTokenPayload & { jti: string }
++  return jwt.verify(token, env.JWT_REFRESH_SECRET, { algorithms: [ALGORITHM] }) as AuthTokenPayload & { jti: string }
+ }
+ 
+ // We never store raw refresh tokens — only a SHA-256 digest — so a DB read
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/utils/token.ts ./backend/src/utils/token.ts
+--- a/backend/src/utils/token.ts	2026-09-24 22:58:26.000000000 +0000
++++ b/backend/src/utils/token.ts	2026-10-13 05:51:01.441483965 +0000
+@@ -5,3 +5,11 @@
+ export function generateRandomToken(bytes = 32): string {
+   return randomBytes(bytes).toString('hex')
+ }
++
++// Random credential for the user's Nextcloud account. Nobody (including the
++// user) ever types it; it exists only so the agent can mint a WebDAV app
++// password. The fixed suffix guarantees every character class so it also
++// satisfies Nextcloud's password_policy app if that is enabled.
++export function generateStorageSecret(): string {
++  return `${randomBytes(30).toString('base64')}-Aa1`
++}
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/validators/auth.validator.ts ./backend/src/validators/auth.validator.ts
+--- a/backend/src/validators/auth.validator.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/src/validators/auth.validator.ts	2026-10-13 05:51:01.445504905 +0000
+@@ -8,6 +8,10 @@
+   .string()
+   .min(8, 'Password must be at least 8 characters')
+   .max(72, 'Password must be at most 72 characters')
++  // Nextcloud used to be the only place password strength was enforced (it
++  // received the user's password). It now gets an independent random secret,
++  // so the rule has to live here.
++  .refine((v) => /[A-Za-z]/.test(v) && /\d/.test(v), 'Password must include at least one letter and one number')
+ export const personNameField = z.string().trim().min(2, 'Name must be at least 2 characters').max(80)
+ export const phoneField = z.string().trim().regex(/^\+?[1-9]\d{7,14}$/, 'Enter a valid phone number')
+ 
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/src/validators/files.validator.ts ./backend/src/validators/files.validator.ts
+--- a/backend/src/validators/files.validator.ts	2026-10-04 12:50:02.000000000 +0000
++++ b/backend/src/validators/files.validator.ts	2026-10-13 05:51:01.449143094 +0000
+@@ -1,4 +1,5 @@
+ import { z } from 'zod'
++import { isSafeSegmentId } from '../utils/davPath'
+ 
+ const nameField = z
+   .string()
+@@ -26,7 +27,7 @@
+ 
+ export const trashItemSchema = z.object({
+   params: z.object({
+-    id: z.string().min(1, 'id is required'),
++    id: z.string().min(1, 'id is required').refine(isSafeSegmentId, 'Invalid id'),
+   }),
+ })
+ 
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/accountDeletion.test.ts ./backend/tests/accountDeletion.test.ts
+--- a/backend/tests/accountDeletion.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/tests/accountDeletion.test.ts	2026-10-13 05:51:01.494748744 +0000
+@@ -0,0 +1,83 @@
++const calls: string[] = []
++const track = (name: string, impl: (...a: any[]) => any = async () => undefined) =>
++  jest.fn(async (...a: any[]) => { calls.push(name); return impl(...a) })
++
++const mockRevoke = track('revokeAccessTokens')
++const mockDeleteSessions = track('deleteSessions')
++const mockFindBilling = track('findBilling', async () => [])
++const mockUpdateBilling = track('updateBilling')
++const mockCancel = track('cancelRazorpay')
++const mockNcDelete = track('deleteNextcloud')
++const mockDeleteUser = track('deleteUser')
++const mockFindById = jest.fn()
++const mockCompare = jest.fn()
++
++jest.mock('../src/repositories/user.repository', () => ({
++  userRepository: { revokeAccessTokens: mockRevoke, findById: mockFindById, delete: mockDeleteUser },
++}))
++jest.mock('../src/repositories/session.repository', () => ({ sessionRepository: { deleteAllForUser: mockDeleteSessions } }))
++jest.mock('../src/repositories/billingSubscription.repository', () => ({
++  billingSubscriptionRepository: { findByUserId: mockFindBilling, updateStatus: mockUpdateBilling },
++}))
++jest.mock('../src/services/RazorpayService', () => ({ razorpayService: { cancelSubscription: mockCancel } }))
++jest.mock('../src/services/NextcloudService', () => ({
++  nextcloudService: { deleteUser: mockNcDelete },
++  NextcloudApiError: class extends Error {},
++}))
++jest.mock('../src/utils/password', () => ({ comparePassword: mockCompare }))
++
++import { accountDeletionService, deleteAccountData } from '../src/services/accountDeletion.service'
++
++const target = { id: 'u1', nextcloudUsername: 'nc-u1' }
++beforeEach(() => { calls.length = 0; jest.clearAllMocks(); mockFindBilling.mockImplementation(async () => { calls.push('findBilling'); return [] }) })
++
++describe('deleteAccountData', () => {
++  it('revokes access first, then billing, then storage, and deletes the row last', async () => {
++    mockFindBilling.mockImplementation(async () => { calls.push('findBilling'); return [{ id: 'b1', status: 'ACTIVE', razorpaySubscriptionId: 'sub_1' }] })
++    await deleteAccountData(target)
++    expect(calls).toEqual(['revokeAccessTokens', 'deleteSessions', 'findBilling', 'cancelRazorpay', 'updateBilling', 'deleteNextcloud', 'deleteUser'])
++    expect(mockCancel).toHaveBeenCalledWith('sub_1', false)
++  })
++
++  it('skips already-terminal subscriptions', async () => {
++    mockFindBilling.mockImplementation(async () => [{ id: 'b1', status: 'CANCELLED', razorpaySubscriptionId: 'sub_1' }])
++    await deleteAccountData(target)
++    expect(mockCancel).not.toHaveBeenCalled()
++  })
++
++  it('FAILS CLOSED if Razorpay cancellation fails: nothing else is deleted', async () => {
++    mockFindBilling.mockImplementation(async () => [{ id: 'b1', status: 'ACTIVE', razorpaySubscriptionId: 'sub_1' }])
++    mockCancel.mockRejectedValueOnce(new Error('razorpay down'))
++    await expect(deleteAccountData(target)).rejects.toMatchObject({ statusCode: 503 })
++    expect(mockNcDelete).not.toHaveBeenCalled()
++    expect(mockDeleteUser).not.toHaveBeenCalled()
++  })
++
++  it('FAILS CLOSED if Nextcloud deletion fails: the Postgres user is kept so it can be retried', async () => {
++    mockNcDelete.mockRejectedValueOnce(new Error('nextcloud down'))
++    await expect(deleteAccountData(target)).rejects.toMatchObject({ statusCode: 503 })
++    expect(mockDeleteUser).not.toHaveBeenCalled()
++  })
++})
++
++describe('deleteOwnAccount', () => {
++  const user = { id: 'u1', role: 'USER', passwordHash: 'h', nextcloudUsername: 'nc-u1' }
++
++  it('requires the correct password', async () => {
++    mockFindById.mockResolvedValue(user); mockCompare.mockResolvedValue(false)
++    await expect(accountDeletionService.deleteOwnAccount('u1', 'wrong')).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockDeleteUser).not.toHaveBeenCalled()
++  })
++
++  it('refuses to self-delete an admin account', async () => {
++    mockFindById.mockResolvedValue({ ...user, role: 'ADMIN' }); mockCompare.mockResolvedValue(true)
++    await expect(accountDeletionService.deleteOwnAccount('u1', 'pw')).rejects.toMatchObject({ statusCode: 403 })
++    expect(mockDeleteUser).not.toHaveBeenCalled()
++  })
++
++  it('deletes with the right password', async () => {
++    mockFindById.mockResolvedValue(user); mockCompare.mockResolvedValue(true)
++    await accountDeletionService.deleteOwnAccount('u1', 'pw')
++    expect(mockDeleteUser).toHaveBeenCalledWith('u1')
++  })
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/admin.service.test.ts ./backend/tests/admin.service.test.ts
+--- a/backend/tests/admin.service.test.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/tests/admin.service.test.ts	2026-10-13 05:51:01.498885325 +0000
+@@ -4,6 +4,7 @@
+ const mockCountAdmins = jest.fn()
+ const mockUpdate = jest.fn()
+ const mockDelete = jest.fn()
++const mockRevokeAccessTokens = jest.fn()
+ 
+ jest.mock('../src/repositories/user.repository', () => ({
+   userRepository: {
+@@ -13,6 +14,7 @@
+     countAdmins: mockCountAdmins,
+     update: mockUpdate,
+     delete: mockDelete,
++    revokeAccessTokens: mockRevokeAccessTokens,
+   },
+ }))
+ 
+@@ -42,6 +44,15 @@
+   planRepository: { findAll: mockFindAllPlans },
+ }))
+ 
++// accountDeletion.service (shared with admin delete) cancels Razorpay autopay.
++const mockFindBilling = jest.fn().mockResolvedValue([])
++jest.mock('../src/repositories/billingSubscription.repository', () => ({
++  billingSubscriptionRepository: { findByUserId: mockFindBilling, updateStatus: jest.fn() },
++}))
++jest.mock('../src/services/RazorpayService', () => ({
++  razorpayService: { cancelSubscription: jest.fn() },
++}))
++
+ const mockProvisionUser = jest.fn()
+ 
+ jest.mock('../src/services/userProvisioning.service', () => ({
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/auth.hardening.test.ts ./backend/tests/auth.hardening.test.ts
+--- a/backend/tests/auth.hardening.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/tests/auth.hardening.test.ts	2026-10-13 05:51:01.502730947 +0000
+@@ -0,0 +1,206 @@
++/**
++ * Unit tests for the auth hardening: refresh-token reuse detection, atomic
++ * single-use tokens, no secrets in responses, login timing equalisation, and
++ * the decoupling of Nextcloud credentials from the user's password.
++ */
++const mockUser = {
++  findByEmail: jest.fn(), findById: jest.fn(), update: jest.fn(), revokeAccessTokens: jest.fn(),
++}
++const mockSession = {
++  create: jest.fn(), findAnyUnexpiredByHash: jest.fn(), markRotated: jest.fn(),
++  deleteByHash: jest.fn(), deleteAllForUser: jest.fn(),
++}
++const mockReset = { create: jest.fn(), deleteAllForUserExcept: jest.fn(), consumeByHash: jest.fn() }
++const mockVerify = { create: jest.fn(), deleteAllForUserExcept: jest.fn(), consumeByHash: jest.fn() }
++const mockNextcloud = { changePassword: jest.fn(), setEmail: jest.fn(), createUser: jest.fn() }
++const mockSendReset = jest.fn()
++const mockComparePassword = jest.fn()
++const mockHashPassword = jest.fn(async () => 'hashed')
++
++jest.mock('../src/repositories/user.repository', () => ({ userRepository: mockUser }))
++jest.mock('../src/repositories/session.repository', () => ({ sessionRepository: mockSession }))
++jest.mock('../src/repositories/passwordResetToken.repository', () => ({ passwordResetTokenRepository: mockReset }))
++jest.mock('../src/repositories/emailVerificationToken.repository', () => ({ emailVerificationTokenRepository: mockVerify }))
++jest.mock('../src/services/NextcloudService', () => ({ nextcloudService: mockNextcloud, NextcloudApiError: class extends Error {} }))
++jest.mock('../src/services/userProvisioning.service', () => ({ provisionUser: jest.fn() }))
++jest.mock('../src/services/email.service', () => ({ sendPasswordResetEmail: mockSendReset, sendEmailVerificationEmail: jest.fn() }))
++jest.mock('../src/utils/password', () => ({ hashPassword: mockHashPassword, comparePassword: mockComparePassword }))
++jest.mock('../src/models/user.model', () => ({ toAuthUserDTO: (u: { id: string }) => ({ id: u.id }) }))
++
++import { authService } from '../src/services/auth.service'
++import { signRefreshToken, hashToken } from '../src/utils/jwt'
++import { generateStorageSecret } from '../src/utils/token'
++
++const activeUser = { id: 'u1', email: 'u1@example.com', status: 'ACTIVE', emailVerifiedAt: new Date(), passwordHash: 'h', nextcloudUsername: 'nc-u1' }
++
++function freshRefreshToken(userId = 'u1') {
++  return signRefreshToken({ sub: userId, email: 'u1@example.com' }).token
++}
++const sessionRow = (over: object = {}) => ({ id: 's1', userId: 'u1', rotatedAt: null, ...over })
++
++beforeEach(() => {
++  jest.clearAllMocks()
++  mockUser.findById.mockResolvedValue(activeUser)
++  mockSession.markRotated.mockResolvedValue(true)
++})
++
++describe('refresh-token rotation and reuse detection', () => {
++  it('rotates a valid token: marks it rotated and issues a new pair', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow())
++    const out = await authService.refresh(freshRefreshToken())
++    expect(mockSession.markRotated).toHaveBeenCalledWith('s1')
++    expect(mockSession.create).toHaveBeenCalledTimes(1)
++    expect(out.accessToken).toBeTruthy()
++    expect(out.refreshToken).toBeTruthy()
++  })
++
++  it('treats a replay of an already-rotated token as theft: revokes ALL sessions and access tokens', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow({ rotatedAt: new Date(Date.now() - 60_000) }))
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockSession.deleteAllForUser).toHaveBeenCalledWith('u1')
++    expect(mockUser.revokeAccessTokens).toHaveBeenCalledWith('u1')
++    expect(mockSession.create).not.toHaveBeenCalled()
++  })
++
++  it('does NOT nuke sessions for a benign race inside the grace window (two tabs, a retry)', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow({ rotatedAt: new Date(Date.now() - 2_000) }))
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockSession.deleteAllForUser).not.toHaveBeenCalled()
++    expect(mockUser.revokeAccessTokens).not.toHaveBeenCalled()
++  })
++
++  it('lets exactly one of two concurrent requests win the rotation', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow())
++    mockSession.markRotated.mockResolvedValue(false) // another request claimed it first
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockSession.create).not.toHaveBeenCalled()
++  })
++
++  it('rejects a token whose stored session belongs to a different user', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow({ userId: 'someone-else' }))
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockSession.markRotated).not.toHaveBeenCalled()
++  })
++
++  it('rejects an unknown or garbage token', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(null)
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 401 })
++    await expect(authService.refresh('not-a-jwt')).rejects.toMatchObject({ statusCode: 401 })
++  })
++
++  it('refuses to refresh for a suspended account and drops the session', async () => {
++    mockSession.findAnyUnexpiredByHash.mockResolvedValue(sessionRow())
++    mockUser.findById.mockResolvedValue({ ...activeUser, status: 'SUSPENDED' })
++    await expect(authService.refresh(freshRefreshToken())).rejects.toMatchObject({ statusCode: 403 })
++    expect(mockSession.deleteByHash).toHaveBeenCalled()
++    expect(mockSession.create).not.toHaveBeenCalled()
++  })
++})
++
++describe('login', () => {
++  it('still runs a password comparison when the email is unknown (no timing oracle)', async () => {
++    mockUser.findByEmail.mockResolvedValue(null)
++    mockComparePassword.mockResolvedValue(false)
++    await expect(authService.login({ email: 'ghost@example.com', password: 'x' })).rejects.toMatchObject({
++      statusCode: 401, message: 'Invalid email or password',
++    })
++    expect(mockComparePassword).toHaveBeenCalledTimes(1)
++  })
++})
++
++describe('forgot password', () => {
++  it('returns nothing (no token ever leaves the service) and emails a link for a real user', async () => {
++    mockUser.findByEmail.mockResolvedValue(activeUser)
++    const out = await authService.forgotPassword({ email: 'u1@example.com' })
++    expect(out).toBeUndefined()
++    expect(mockSendReset).toHaveBeenCalledTimes(1)
++    expect(mockSendReset.mock.calls[0][1]).toMatch(/token=/)
++  })
++
++  it('does nothing observable for an unknown email', async () => {
++    mockUser.findByEmail.mockResolvedValue(null)
++    await expect(authService.forgotPassword({ email: 'ghost@example.com' })).resolves.toBeUndefined()
++    expect(mockReset.create).not.toHaveBeenCalled()
++    expect(mockSendReset).not.toHaveBeenCalled()
++  })
++
++  it('does not fail (and so does not leak) when the mail provider is down', async () => {
++    mockUser.findByEmail.mockResolvedValue(activeUser)
++    mockSendReset.mockRejectedValueOnce(new Error('resend 500'))
++    await expect(authService.forgotPassword({ email: 'u1@example.com' })).resolves.toBeUndefined()
++  })
++})
++
++describe('reset password', () => {
++  it('rejects an invalid, expired or already-used token and changes nothing', async () => {
++    mockReset.consumeByHash.mockResolvedValue(null)
++    await expect(authService.resetPassword('bad', 'NewPassw0rd')).rejects.toMatchObject({ statusCode: 400 })
++    expect(mockUser.update).not.toHaveBeenCalled()
++    expect(mockSession.deleteAllForUser).not.toHaveBeenCalled()
++  })
++
++  it('claims the token by its hash, updates the hash, revokes every session and access token', async () => {
++    mockReset.consumeByHash.mockResolvedValue({ userId: 'u1' })
++    await authService.resetPassword('raw-token', 'NewPassw0rd')
++    expect(mockReset.consumeByHash).toHaveBeenCalledWith(hashToken('raw-token'))
++    expect(mockUser.update).toHaveBeenCalledWith('u1', expect.objectContaining({ passwordHash: 'hashed' }))
++    expect(mockSession.deleteAllForUser).toHaveBeenCalledWith('u1')
++    expect(mockUser.revokeAccessTokens).toHaveBeenCalledWith('u1')
++  })
++
++  it('never sends the new password to Nextcloud', async () => {
++    mockReset.consumeByHash.mockResolvedValue({ userId: 'u1' })
++    await authService.resetPassword('raw-token', 'NewPassw0rd')
++    expect(mockNextcloud.changePassword).not.toHaveBeenCalled()
++  })
++})
++
++describe('change password', () => {
++  it('rejects a wrong current password without touching anything', async () => {
++    mockComparePassword.mockResolvedValue(false)
++    await expect(authService.changePassword('u1', 'wrong', 'NewPassw0rd')).rejects.toMatchObject({ statusCode: 401 })
++    expect(mockUser.update).not.toHaveBeenCalled()
++  })
++
++  it('on success revokes access, and never involves Nextcloud', async () => {
++    mockComparePassword.mockResolvedValue(true)
++    await authService.changePassword('u1', 'old', 'NewPassw0rd')
++    expect(mockUser.revokeAccessTokens).toHaveBeenCalledWith('u1')
++    expect(mockSession.deleteAllForUser).toHaveBeenCalledWith('u1')
++    expect(mockNextcloud.changePassword).not.toHaveBeenCalled()
++  })
++})
++
++describe('email verification link', () => {
++  it('cannot be used to sign in a suspended account', async () => {
++    mockVerify.consumeByHash.mockResolvedValue({ userId: 'u1' })
++    mockUser.findById.mockResolvedValue({ ...activeUser, status: 'SUSPENDED' })
++    await expect(authService.verifyEmail('t')).rejects.toMatchObject({ statusCode: 403 })
++    expect(mockSession.create).not.toHaveBeenCalled()
++  })
++
++  it('rejects a token that was already consumed (atomic single use)', async () => {
++    mockVerify.consumeByHash.mockResolvedValue(null)
++    await expect(authService.verifyEmail('t')).rejects.toMatchObject({ statusCode: 400 })
++  })
++})
++
++describe('storage credential repair', () => {
++  it('mints a random Nextcloud secret, never the user password', async () => {
++    mockComparePassword.mockResolvedValue(true)
++    mockNextcloud.changePassword.mockResolvedValue({ webdavPassword: 'dav-new' })
++    await authService.repairWebdavPassword('u1', 'my-real-password-1')
++    const [, sentSecret] = mockNextcloud.changePassword.mock.calls[0]
++    expect(sentSecret).not.toBe('my-real-password-1')
++    expect(sentSecret.length).toBeGreaterThanOrEqual(40)
++  })
++})
++
++describe('generateStorageSecret', () => {
++  it('is long, unique per call and satisfies all character classes', () => {
++    const a = generateStorageSecret()
++    expect(a).not.toBe(generateStorageSecret())
++    expect(a.length).toBeGreaterThanOrEqual(40)
++    expect(a).toMatch(/[a-z]/); expect(a).toMatch(/[A-Z]/); expect(a).toMatch(/\d/); expect(a).toMatch(/[^A-Za-z0-9]/)
++  })
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/auth.test.ts ./backend/tests/auth.test.ts
+--- a/backend/tests/auth.test.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/backend/tests/auth.test.ts	2026-10-13 05:51:01.506428425 +0000
+@@ -17,7 +17,8 @@
+ 
+ import { createApp } from '../src/app'
+ import { prisma } from '../src/database/prisma'
+-import { decrypt } from '../src/utils/encryption'
++import { hashToken } from '../src/utils/jwt'
++import { generateRandomToken } from '../src/utils/token'
+ 
+ // This is a real Postgres integration suite; allow for a cold database connection.
+ jest.setTimeout(30000)
+@@ -28,6 +29,16 @@
+ 
+ const app = createApp()
+ 
++// Tokens are minted straight into the database: the API (rightly) never
++// returns them in a response, so a test has to play the part of the inbox.
++async function mintToken(kind: 'verify' | 'reset', userId: string): Promise<string> {
++  const raw = generateRandomToken()
++  const data = { userId, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
++  if (kind === 'verify') await prisma.emailVerificationToken.create({ data })
++  else await prisma.passwordResetToken.create({ data })
++  return raw
++}
++
+ const testUser = {
+   name: 'Test User',
+   email: `test-${Date.now()}@example.com`,
+@@ -59,7 +70,10 @@
+     expect(res.body.data.user.email).toBe(testUser.email)
+     expect(res.body.data.user.avatarInitials).toBe('TU')
+     expect(res.body.data.verificationRequired).toBe(true)
+-    verificationToken = res.body.data.devToken
++    // The response must never carry a token — it only ever travels by email.
++    expect(JSON.stringify(res.body)).not.toMatch(/devToken|token/i)
++    const created = await prisma.user.findUnique({ where: { email: testUser.email } })
++    verificationToken = await mintToken('verify', created!.id)
+   })
+ 
+   it('records the agreement acceptance for the new account', async () => {
+@@ -143,8 +157,9 @@
+ 
+     expect(res.status).toBe(200)
+     expect(res.body.data.message).toMatch(/if an account exists/i)
+-    // devToken only present outside production — this suite runs with NODE_ENV=test
+-    expect(res.body.data.devToken).toBeDefined()
++    // The reset token is only ever emailed, never returned.
++    expect(res.body.data.devToken).toBeUndefined()
++    expect(JSON.stringify(res.body)).not.toMatch(/token/i)
+   })
+ 
+   it('returns the same generic message for an unknown email (no enumeration)', async () => {
+@@ -194,30 +209,57 @@
+     expect(replayRes.status).toBe(401)
+   })
+ 
+-  it('resets the password using the stored Nextcloud username, not the email address', async () => {
++  it('resets the password without touching Nextcloud, and revokes every existing session', async () => {
+     const userBefore = await prisma.user.findUnique({ where: { email: testUser.email } })
+     expect(userBefore).toBeTruthy()
+-    expect(userBefore!.nextcloudUsername).toBe(userBefore!.id)
++    mockChangePassword.mockClear()
+ 
+-    const forgotRes = await request(app)
+-      .post('/api/auth/forgot-password')
+-      .send({ email: testUser.email })
+-
+-    expect(forgotRes.status).toBe(200)
+-    const devToken = forgotRes.body.data.devToken
+-    expect(devToken).toBeDefined()
+-
+-    const resetRes = await request(app)
+-      .post('/api/auth/reset-password')
+-      .send({ token: devToken, password: 'ResetPassword123!' })
++    // Log in first so there is a live session and access token to be revoked.
++    const loginRes = await request(app).post('/api/auth/login').send({ email: testUser.email, password: testUser.password })
++    expect(loginRes.status).toBe(200)
++    const oldAccessToken = loginRes.body.data.accessToken
++    const oldCookie = loginRes.headers['set-cookie']
+ 
++    const rawToken = await mintToken('reset', userBefore!.id)
++    const resetRes = await request(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'ResetPassword123!' })
+     expect(resetRes.status).toBe(200)
+-    expect(mockChangePassword).toHaveBeenCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
++
++    // Nextcloud credentials are independent random secrets now.
++    expect(mockChangePassword).not.toHaveBeenCalled()
+ 
+     const updated = await prisma.user.findUnique({ where: { email: testUser.email } })
+     expect(updated?.passwordHash).not.toBe(userBefore?.passwordHash)
+-    expect(updated?.nextcloudWebdavPasswordEncrypted).not.toBe(userBefore?.nextcloudWebdavPasswordEncrypted)
+-    expect(decrypt(updated!.nextcloudWebdavPasswordEncrypted!)).toBe('rotated-webdav-password')
+-    expect(mockChangePassword).toHaveBeenLastCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
++    expect(updated?.nextcloudWebdavPasswordEncrypted).toBe(userBefore?.nextcloudWebdavPasswordEncrypted)
++
++    // Token is single use.
++    const replay = await request(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'AnotherPassword123!' })
++    expect(replay.status).toBe(400)
++
++    // The pre-reset access token and refresh cookie are both dead.
++    expect((await request(app).get('/api/auth/me').set('Authorization', `Bearer ${oldAccessToken}`)).status).toBe(401)
++    expect((await request(app).post('/api/auth/refresh-token').set('Cookie', oldCookie)).status).toBe(401)
++
++    // Old password no longer works; the new one does.
++    expect((await request(app).post('/api/auth/login').send({ email: testUser.email, password: testUser.password })).status).toBe(401)
++    expect((await request(app).post('/api/auth/login').send({ email: testUser.email, password: 'ResetPassword123!' })).status).toBe(200)
++  })
++
++  it('detects refresh-token reuse and revokes the whole session family', async () => {
++    const loginRes = await request(app).post('/api/auth/login').send({ email: testUser.email, password: 'ResetPassword123!' })
++    const stolenCookie = loginRes.headers['set-cookie']
++
++    // Legitimate rotation consumes the cookie...
++    const rotated = await request(app).post('/api/auth/refresh-token').set('Cookie', stolenCookie)
++    expect(rotated.status).toBe(200)
++    const newCookie = rotated.headers['set-cookie']
++
++    // ...age the rotation past the grace window, then replay the old cookie.
++    await prisma.session.updateMany({ where: { rotatedAt: { not: null } }, data: { rotatedAt: new Date(Date.now() - 60_000) } })
++    const replay = await request(app).post('/api/auth/refresh-token').set('Cookie', stolenCookie)
++    expect(replay.status).toBe(401)
++
++    // The victim's freshly rotated cookie is revoked too.
++    const afterTheft = await request(app).post('/api/auth/refresh-token').set('Cookie', newCookie)
++    expect(afterTheft.status).toBe(401)
+   })
+ })
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/davPath.test.ts ./backend/tests/davPath.test.ts
+--- a/backend/tests/davPath.test.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/tests/davPath.test.ts	2026-10-13 05:51:01.510158313 +0000
+@@ -1,4 +1,4 @@
+-import { sanitizeDavPath, InvalidPathError } from '../src/utils/davPath'
++import { sanitizeDavPath, InvalidPathError, assertSafeFileName, isSafeSegmentId } from '../src/utils/davPath'
+ 
+ describe('sanitizeDavPath', () => {
+   it('defaults empty/undefined/null to root', () => {
+@@ -41,15 +41,22 @@
+     }
+   })
+ 
+-  it('fully collapses traversal buried mid-path down to a still-rooted result', () => {
+-    // Whatever this normalizes to, it can never climb above the anchor "/" —
+-    // path.posix.normalize() mathematically cannot produce that. The
+-    // WebDAV client's own base URL already has this user's root baked in
+-    // (…/files/<uuid>), so a normalized "/etc/passwd" here means a file
+-    // INSIDE that user's own space, never the real server filesystem.
+-    const result = sanitizeDavPath('/Documents/../../../etc/passwd')
+-    expect(result).toBe('/etc/passwd')
+-    expect(result).not.toContain('..')
++  it('rejects ".." segments instead of silently resolving them', () => {
++    for (const attempt of ['/Documents/../../../etc/passwd', '/a/../b', '..', '../x', 'x/..']) {
++      expect(() => sanitizeDavPath(attempt)).toThrow(InvalidPathError)
++    }
++  })
++
++  it('rejects backslashes and control characters', () => {
++    for (const attempt of ['..\\secret', '/a\\b', '/a\r\nb', '/a\x07b']) {
++      expect(() => sanitizeDavPath(attempt)).toThrow(InvalidPathError)
++    }
++  })
++
++  it('treats percent-encoded traversal as literal text, never decoding it', () => {
++    // %2e%2e is just characters in one segment; it is re-encoded on the way
++    // out (to %252e%252e), so it cannot become "..".
++    expect(sanitizeDavPath('/%2e%2e/%2e%2e/secret')).toBe('/%2e%2e/%2e%2e/secret')
+   })
+ 
+   it('rejects null bytes', () => {
+@@ -65,3 +72,24 @@
+     expect(() => sanitizeDavPath(123)).toThrow(InvalidPathError)
+   })
+ })
++
++describe('assertSafeFileName', () => {
++  it('accepts ordinary names', () => {
++    expect(assertSafeFileName('report (final).pdf')).toBe('report (final).pdf')
++  })
++  it('rejects anything that is not a single plain segment', () => {
++    for (const bad of ['..', '.', '../x', 'a/b', 'a\\b', '', 'x\0y', 'a'.repeat(256), 5 as unknown as string]) {
++      expect(() => assertSafeFileName(bad)).toThrow(InvalidPathError)
++    }
++  })
++})
++
++describe('isSafeSegmentId', () => {
++  it('allows Nextcloud-style trash ids (spaces, unicode, dots)', () => {
++    expect(isSafeSegmentId('my report.pdf.d1699999999')).toBe(true)
++    expect(isSafeSegmentId('résumé.docx.d1699999999')).toBe(true)
++  })
++  it('rejects ids that could re-point the URL', () => {
++    for (const bad of ['', '.', '..', 'a/b', '../x', 'a\\b']) expect(isSafeSegmentId(bad)).toBe(false)
++  })
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/files.service.test.ts ./backend/tests/files.service.test.ts
+--- a/backend/tests/files.service.test.ts	2026-09-24 22:58:28.000000000 +0000
++++ b/backend/tests/files.service.test.ts	2026-10-13 05:51:01.513879624 +0000
+@@ -50,6 +50,7 @@
+   }
+ })
+ 
++import { InvalidPathError } from '../src/utils/davPath'
+ import { filesService } from '../src/services/files.service'
+ import { WebDavError } from '../src/services/WebDavService'
+ import { encrypt } from '../src/utils/encryption'
+@@ -128,11 +129,8 @@
+ 
+     it('rejects a path attempting traversal before ever calling WebDAV', async () => {
+       mockUserRow()
+-      // sanitizeDavPath neutralizes rather than always throwing — the real
+-      // guarantee under test is that WebDAV never sees a raw ".." segment.
+-      await filesService.list('user-1', '/Documents/../../secret')
+-      const [, , calledPath] = mockListDirectory.mock.calls[0]
+-      expect(calledPath).not.toContain('..')
++      await expect(filesService.list('user-1', '/Documents/../../secret')).rejects.toThrow(InvalidPathError)
++      expect(mockListDirectory).not.toHaveBeenCalled()
+     })
+   })
+ 
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/idor.test.ts ./backend/tests/idor.test.ts
+--- a/backend/tests/idor.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/tests/idor.test.ts	2026-10-13 05:51:01.517542692 +0000
+@@ -0,0 +1,235 @@
++/**
++ * Cross-tenant (IDOR) and token-handling tests, run against the real Express
++ * app over HTTP. Only the edges are mocked: the user table, Prisma, and the
++ * WebDAV client. So what is verified is the real middleware chain, validators,
++ * controllers and services deciding WHOSE credentials and WHICH paths reach
++ * storage.
++ *
++ * Two users, A and B. Everything below is performed as A.
++ */
++import request from 'supertest'
++import jwt from 'jsonwebtoken'
++import { encrypt } from '../src/utils/encryption'
++
++const A = { id: 'user-a', nc: 'nc-a', pw: 'dav-pass-a' }
++const B = { id: 'user-b', nc: 'nc-b', pw: 'dav-pass-b' }
++
++type AuthState = { id: string; status: string; emailVerifiedAt: Date | null; tokensValidAfter: Date | null }
++const authStates: Record<string, AuthState | null> = {}
++const mockFindAuthState = jest.fn(async (id: string) => authStates[id] ?? null)
++
++function userRow(u: typeof A) {
++  return {
++    id: u.id, nextcloudUsername: u.nc, nextcloudWebdavPasswordEncrypted: encrypt(u.pw),
++    role: 'USER', status: 'ACTIVE', email: `${u.id}@example.com`, name: u.id, plan: null,
++  }
++}
++const mockFindById = jest.fn(async (id: string) => (id === A.id ? userRow(A) : id === B.id ? userRow(B) : null))
++
++jest.mock('../src/repositories/user.repository', () => ({
++  userRepository: { findAuthState: mockFindAuthState, findById: mockFindById },
++}))
++
++const mockShareFindFirst = jest.fn().mockResolvedValue(null)
++jest.mock('../src/database/prisma', () => ({
++  prisma: { share: { findFirst: mockShareFindFirst, findMany: jest.fn().mockResolvedValue([]) } },
++  connectDatabase: jest.fn(),
++  disconnectDatabase: jest.fn(),
++}))
++
++jest.mock('../src/repositories/favorite.repository', () => ({
++  favoriteRepository: { findPathsByUser: jest.fn().mockResolvedValue([]) },
++}))
++
++const dav = {
++  listDirectory: jest.fn().mockResolvedValue([]),
++  stat: jest.fn(),
++  downloadStream: jest.fn(),
++  deleteItem: jest.fn(),
++  move: jest.fn(),
++  copy: jest.fn(),
++  createFolder: jest.fn(),
++  listTrash: jest.fn().mockResolvedValue([]),
++  restoreTrashItem: jest.fn(),
++  deleteTrashItem: jest.fn(),
++}
++jest.mock('../src/services/WebDavService', () => ({
++  ...jest.requireActual('../src/services/WebDavService'),
++  webDavService: dav,
++}))
++
++import { createApp } from '../src/app'
++import { signAccessToken } from '../src/utils/jwt'
++
++const app = createApp()
++const bearer = (id: string) => `Bearer ${signAccessToken({ sub: id, email: `${id}@example.com` })}`
++const verified = (id: string, extra: Partial<AuthState> = {}): AuthState =>
++  ({ id, status: 'ACTIVE', emailVerifiedAt: new Date(), tokensValidAfter: null, ...extra })
++
++beforeEach(() => {
++  authStates[A.id] = verified(A.id)
++  authStates[B.id] = verified(B.id)
++  jest.clearAllMocks()
++  dav.listDirectory.mockResolvedValue([])
++  dav.stat.mockResolvedValue({ filename: '/docs', basename: 'docs', lastmod: 'Mon, 21 Jul 2026 12:00:00 GMT', size: 0, type: 'directory', etag: 'e' })
++  mockShareFindFirst.mockResolvedValue(null)
++})
++
++const allDavCalls = () => Object.values(dav).flatMap((fn) => fn.mock.calls)
++
++describe('every protected route requires a token', () => {
++  const routes: Array<[string, string]> = [
++    ['get', '/api/files'], ['get', '/api/files/download?path=/x'], ['get', '/api/files/preview?path=/x'],
++    ['delete', '/api/files?path=/x'], ['post', '/api/files/move'], ['post', '/api/files/copy'],
++    ['get', '/api/files/trash'], ['delete', '/api/files/trash'], ['get', '/api/shares'],
++    ['delete', '/api/shares/some-id'], ['get', '/api/users/me'], ['delete', '/api/users/me'],
++  ]
++  it.each(routes)('%s %s -> 401 without a token', async (method, url) => {
++    const res = await (request(app) as any)[method](url)
++    expect(res.status).toBe(401)
++    expect(allDavCalls()).toHaveLength(0)
++  })
++})
++
++describe('identity comes only from the verified token', () => {
++  it("uses A's own storage credentials for A's request", async () => {
++    await request(app).get('/api/files').query({ path: '/' }).set('Authorization', bearer(A.id)).expect(200)
++    expect(dav.listDirectory).toHaveBeenCalledWith(A.nc, A.pw, '/')
++  })
++
++  it('ignores userId / nextcloudUsername supplied in query, headers or body', async () => {
++    await request(app)
++      .get('/api/files')
++      .query({ path: '/', userId: B.id, ownerId: B.id, nextcloudUsername: B.nc })
++      .set('Authorization', bearer(A.id))
++      .set('x-user-id', B.id)
++      .set('x-nextcloud-username', B.nc)
++      .expect(200)
++
++    expect(dav.listDirectory).toHaveBeenCalledTimes(1)
++    const [username, password] = dav.listDirectory.mock.calls[0]
++    expect([username, password]).toEqual([A.nc, A.pw])
++    expect(JSON.stringify(allDavCalls())).not.toContain(B.nc)
++    expect(JSON.stringify(allDavCalls())).not.toContain(B.pw)
++  })
++
++  it('never lets a body-supplied owner reach a mutating route', async () => {
++    await request(app)
++      .post('/api/files/folder')
++      .set('Authorization', bearer(A.id))
++      .send({ path: '/', name: 'docs', userId: B.id, nextcloudUsername: B.nc })
++      .expect((r) => expect(r.status).toBeLessThan(500))
++    for (const call of dav.createFolder.mock.calls) expect(call.slice(0, 2)).toEqual([A.nc, A.pw])
++    expect(JSON.stringify(allDavCalls())).not.toContain(B.nc)
++  })
++})
++
++describe('path traversal cannot reach another tenant', () => {
++  const attempts = ['../nc-b', '../../nc-b/secret.txt', '/a/../../nc-b', '..\\nc-b', '/files/nc-b/../x']
++
++  it.each(attempts)('list %j is rejected before WebDAV is called', async (p) => {
++    const res = await request(app).get('/api/files').query({ path: p }).set('Authorization', bearer(A.id))
++    expect(res.status).toBe(400)
++    expect(dav.listDirectory).not.toHaveBeenCalled()
++  })
++
++  it.each(attempts)('download %j is rejected before WebDAV is called', async (p) => {
++    const res = await request(app).get('/api/files/download').query({ path: p }).set('Authorization', bearer(A.id))
++    expect(res.status).toBe(400)
++    expect(dav.stat).not.toHaveBeenCalled()
++    expect(dav.downloadStream).not.toHaveBeenCalled()
++  })
++
++  it('rejects traversal in move destination and delete', async () => {
++    const mv = await request(app).post('/api/files/move').set('Authorization', bearer(A.id)).send({ from: '/a.txt', to: '../../nc-b/a.txt' })
++    expect(mv.status).toBe(400)
++    const del = await request(app).delete('/api/files').query({ path: '../nc-b/x' }).set('Authorization', bearer(A.id))
++    expect(del.status).toBe(400)
++    expect(dav.move).not.toHaveBeenCalled()
++    expect(dav.deleteItem).not.toHaveBeenCalled()
++  })
++
++  it('treats percent-encoded traversal as literal text and never sends ".." to WebDAV', async () => {
++    await request(app).get('/api/files').query({ path: '%2e%2e/%2e%2e/nc-b' }).set('Authorization', bearer(A.id))
++    for (const call of dav.listDirectory.mock.calls) expect(String(call[2])).not.toContain('..')
++  })
++
++  // The HTTP client collapses a bare "%2e%2e" segment before it is even sent,
++  // so a lone ".." id is covered by the isSafeSegmentId unit test. These ids
++  // reach Express intact and are decoded to values containing separators.
++  it.each(['..%2Fx', '%2Fetc%2Fpasswd', 'a%5Cb', 'x%00y'])('rejects trash id %s on delete and restore', async (id) => {
++    const del = await request(app).delete(`/api/files/trash/${id}`).set('Authorization', bearer(A.id))
++    const res = await request(app).post(`/api/files/trash/${id}/restore`).set('Authorization', bearer(A.id))
++    expect(del.status).toBe(400)
++    expect(res.status).toBe(400)
++    expect(dav.deleteTrashItem).not.toHaveBeenCalled()
++    expect(dav.restoreTrashItem).not.toHaveBeenCalled()
++  })
++})
++
++describe('shares are scoped to their owner', () => {
++  it("A revoking B's share id looks the row up by BOTH id and A's user id, and gets 404", async () => {
++    const res = await request(app).delete('/api/shares/share-owned-by-b').set('Authorization', bearer(A.id))
++    expect(res.status).toBe(404)
++    expect(mockShareFindFirst).toHaveBeenCalledWith({ where: { id: 'share-owned-by-b', userId: A.id } })
++  })
++})
++
++describe('access-token validation', () => {
++  const secret = process.env.JWT_ACCESS_SECRET!
++  const claims = { sub: A.id, email: 'a@example.com' }
++  const hit = (token: string) => request(app).get('/api/files').set('Authorization', `Bearer ${token}`)
++
++  it('rejects a token signed with a different algorithm (HS512) even with the right secret', async () => {
++    expect((await hit(jwt.sign(claims, secret, { algorithm: 'HS512' }))).status).toBe(401)
++  })
++
++  it('rejects an unsigned (alg=none) token', async () => {
++    const b64 = (o: object) => Buffer.from(JSON.stringify(o)).toString('base64url')
++    expect((await hit(`${b64({ alg: 'none', typ: 'JWT' })}.${b64(claims)}.`)).status).toBe(401)
++  })
++
++  it('rejects a token signed with the refresh secret (token-type confusion)', async () => {
++    expect((await hit(jwt.sign(claims, process.env.JWT_REFRESH_SECRET!, { algorithm: 'HS256' }))).status).toBe(401)
++  })
++
++  it('rejects expired and tampered tokens', async () => {
++    expect((await hit(jwt.sign(claims, secret, { algorithm: 'HS256', expiresIn: -10 }))).status).toBe(401)
++    const good = signAccessToken(claims)
++    expect((await hit(good.slice(0, -2) + (good.endsWith('AA') ? 'BB' : 'AA'))).status).toBe(401)
++  })
++
++  it('rejects a still-valid token for a user who has since been deleted', async () => {
++    authStates[A.id] = null
++    expect((await hit(signAccessToken(claims))).status).toBe(401)
++  })
++
++  it('rejects a token issued before the account\'s tokensValidAfter (password change, reuse detection)', async () => {
++    const token = jwt.sign({ ...claims, iat: Math.floor(Date.now() / 1000) - 600 }, secret, { algorithm: 'HS256' })
++    authStates[A.id] = verified(A.id, { tokensValidAfter: new Date() })
++    expect((await hit(token)).status).toBe(401)
++  })
++
++  it('accepts a token issued after tokensValidAfter', async () => {
++    authStates[A.id] = verified(A.id, { tokensValidAfter: new Date(Date.now() - 60_000) })
++    expect((await hit(signAccessToken(claims))).status).toBe(200)
++  })
++
++  it('blocks a suspended user immediately, not when the token expires', async () => {
++    authStates[A.id] = verified(A.id, { status: 'SUSPENDED' })
++    expect((await hit(signAccessToken(claims))).status).toBe(403)
++    expect(dav.listDirectory).not.toHaveBeenCalled()
++  })
++
++  it('blocks a user whose email is not verified', async () => {
++    authStates[A.id] = verified(A.id, { emailVerifiedAt: null })
++    expect((await hit(signAccessToken(claims))).status).toBe(403)
++  })
++})
++
++describe('CSRF guard on cookie-authenticated endpoints', () => {
++  it.each(['/api/auth/refresh-token', '/api/auth/logout'])('%s rejects a foreign Origin', async (url) => {
++    const res = await request(app).post(url).set('Origin', 'https://evil.example').set('Cookie', 'nimbus_refresh_token=x')
++    expect(res.status).toBe(403)
++  })
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/backend/tests/rateLimits.test.ts ./backend/tests/rateLimits.test.ts
+--- a/backend/tests/rateLimits.test.ts	1970-01-01 00:00:00.000000000 +0000
++++ b/backend/tests/rateLimits.test.ts	2026-10-13 05:51:01.521122718 +0000
+@@ -0,0 +1,70 @@
++import express from 'express'
++import request from 'supertest'
++import {
++  loginAccountRateLimiter, emailActionRateLimiter, publicShareRateLimiter, sensitiveActionRateLimiter,
++} from '../src/middleware/rateLimiter.middleware'
++
++function appWith(route: string, limiter: express.RequestHandler, status = 401) {
++  const app = express()
++  app.set('trust proxy', 1)
++  app.use(express.json())
++  app.post(route, limiter, (_req, res) => res.status(status).json({}))
++  return app
++}
++const post = (app: express.Express, url: string, ip: string, body: object = {}) =>
++  request(app).post(url).set('X-Forwarded-For', ip).send(body)
++
++describe('per-account login limiter', () => {
++  it('counts failures against one email across DIFFERENT IPs, then returns 429', async () => {
++    const app = appWith('/login', loginAccountRateLimiter)
++    for (let i = 0; i < 10; i++) {
++      expect((await post(app, '/login', `10.0.0.${i}`, { email: 'victim@example.com' })).status).toBe(401)
++    }
++    expect((await post(app, '/login', '10.0.0.99', { email: 'victim@example.com' })).status).toBe(429)
++  })
++
++  it('treats case and whitespace variants as the same account', async () => {
++    const app = appWith('/login', loginAccountRateLimiter)
++    for (let i = 0; i < 10; i++) await post(app, '/login', '10.1.0.1', { email: i % 2 ? ' ALICE@example.com ' : 'alice@example.com' })
++    expect((await post(app, '/login', '10.1.0.2', { email: 'Alice@Example.com' })).status).toBe(429)
++  })
++
++  it('does not penalise other accounts', async () => {
++    const app = appWith('/login', loginAccountRateLimiter)
++    for (let i = 0; i < 11; i++) await post(app, '/login', '10.2.0.1', { email: 'locked@example.com' })
++    expect((await post(app, '/login', '10.2.0.1', { email: 'other@example.com' })).status).toBe(401)
++  })
++
++  it('does not count successful logins', async () => {
++    const app = appWith('/login', loginAccountRateLimiter, 200)
++    for (let i = 0; i < 25; i++) expect((await post(app, '/login', '10.3.0.1', { email: 'ok@example.com' })).status).toBe(200)
++  })
++})
++
++describe('per-address email-sending limiter', () => {
++  it('allows 3 reset/verification emails per address per hour, from any IP', async () => {
++    const app = appWith('/forgot', emailActionRateLimiter, 200)
++    for (let i = 0; i < 3; i++) expect((await post(app, '/forgot', `10.4.0.${i}`, { email: 'x@example.com' })).status).toBe(200)
++    expect((await post(app, '/forgot', '10.4.0.50', { email: 'x@example.com' })).status).toBe(429)
++  })
++})
++
++describe('public share password limiter', () => {
++  it('stops password guessing on one link from one client, but not other links or clients', async () => {
++    const app = appWith('/public/:token/download', publicShareRateLimiter)
++    for (let i = 0; i < 10; i++) expect((await post(app, '/public/tokA/download', '10.5.0.1')).status).toBe(401)
++    expect((await post(app, '/public/tokA/download', '10.5.0.1')).status).toBe(429)
++    expect((await post(app, '/public/tokB/download', '10.5.0.1')).status).toBe(401)
++    expect((await post(app, '/public/tokA/download', '10.5.0.2')).status).toBe(401)
++  })
++})
++
++describe('per-user sensitive-action limiter', () => {
++  it('is keyed by user id, so changing IP does not reset it', async () => {
++    const app = express()
++    app.set('trust proxy', 1)
++    app.post('/danger', (req, _res, next) => { (req as any).user = { sub: 'user-1' }; next() }, sensitiveActionRateLimiter, (_req, res) => res.status(200).json({}))
++    for (let i = 0; i < 5; i++) expect((await post(app, '/danger', `10.6.0.${i}`)).status).toBe(200)
++    expect((await post(app, '/danger', '10.6.0.200')).status).toBe(429)
++  })
++})
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/src/api/auth.ts ./src/api/auth.ts
+--- a/src/api/auth.ts	2026-10-10 18:20:12.000000000 +0000
++++ b/src/api/auth.ts	2026-10-13 05:51:01.524965429 +0000
+@@ -13,7 +13,9 @@
+ }
+ 
+ interface AuthResponse { user: AuthUser; accessToken: string }
+-export interface RegistrationResult { user: AuthUser; verificationRequired: true; devToken?: string }
++export interface RegistrationResult { user: AuthUser; verificationRequired: true }
++
++let inflightRefresh: Promise<AuthResponse> | null = null
+ 
+ // Every call here unwraps the backend's { success, data } envelope once,
+ // so nothing above this file ever touches that shape directly.
+@@ -41,10 +43,20 @@
+ 
+   logout: () => api.post('/auth/logout').then(() => undefined),
+ 
+-  refreshToken: () => api.post<{ data: AuthResponse }>('/auth/refresh-token').then((r) => r.data.data),
++  // One in-flight call shared by every caller. The backend rotates the refresh
++  // token on each use and treats a replay as theft, so two simultaneous calls
++  // with the same cookie (React StrictMode's double effect in dev, two
++  // components restoring the session) must not both hit the server.
++  refreshToken: (): Promise<AuthResponse> => {
++    inflightRefresh ??= api
++      .post<{ data: AuthResponse }>('/auth/refresh-token')
++      .then((r) => r.data.data)
++      .finally(() => { inflightRefresh = null })
++    return inflightRefresh
++  },
+ 
+   forgotPassword: (email: string) =>
+-    api.post<{ data: { message: string; devToken?: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
++    api.post<{ data: { message: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
+ 
+   resetPassword: (token: string, password: string) =>
+     api.post('/auth/reset-password', { token, password }).then(() => undefined),
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/src/pages/ForgotPassword.tsx ./src/pages/ForgotPassword.tsx
+--- a/src/pages/ForgotPassword.tsx	2026-09-24 22:58:24.000000000 +0000
++++ b/src/pages/ForgotPassword.tsx	2026-10-13 05:51:01.528852387 +0000
+@@ -11,7 +11,6 @@
+   const [loading, setLoading] = useState(false)
+   const [sent, setSent] = useState(false)
+   const [error, setError] = useState('')
+-  const [devResetUrl, setDevResetUrl] = useState('')
+ 
+   const handleSubmit = async (e: FormEvent) => {
+     e.preventDefault()
+@@ -22,8 +21,7 @@
+       // The backend always returns the same generic response whether or
+       // not the email is registered — that's intentional (prevents
+       // enumerating accounts), not a bug to work around here.
+-      const result = await authApi.forgotPassword(email)
+-      if (result.devToken) setDevResetUrl(`${window.location.origin}/reset-password?token=${encodeURIComponent(result.devToken)}`)
++      await authApi.forgotPassword(email)
+       setSent(true)
+     } catch {
+       setError('Something went wrong. Please try again.')
+@@ -41,7 +39,6 @@
+           <p className="text-sm text-ink-500 dark:text-ink-400">
+             If an account exists for <span className="font-medium">{email}</span>, we've sent a reset link.
+           </p>
+-          {devResetUrl && <p className="mt-2 break-all text-xs text-brand-600">Development reset link: <a className="underline" href={devResetUrl}>Open reset link</a></p>}
+         </div>
+       ) : (
+         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+diff -ruN -x node_modules -x tsconfig.tsbuildinfo -x dist -x package-lock.json /tmp/new2/src/pages/Register.tsx ./src/pages/Register.tsx
+--- a/src/pages/Register.tsx	2026-10-10 18:20:12.000000000 +0000
++++ b/src/pages/Register.tsx	2026-10-13 05:51:01.532720812 +0000
+@@ -42,9 +42,8 @@
+     if (missingAgreement) return
+     setLoading(true)
+     try {
+-      const result = await register(name, email, phoneNumber, password, AGREEMENT_VERSION)
+-      const token = result.devToken ? `&token=${encodeURIComponent(result.devToken)}` : ''
+-      navigate(`/verify-email?email=${encodeURIComponent(email)}${token}`)
++      await register(name, email, phoneNumber, password, AGREEMENT_VERSION)
++      navigate(`/verify-email?email=${encodeURIComponent(email)}`)
+     } catch (err) {
+       const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
+       setError(message ?? 'Something went wrong. Please try again.')

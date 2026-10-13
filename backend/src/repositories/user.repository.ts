@@ -14,6 +14,20 @@ export const userRepository = {
     return prisma.user.findUnique({ where: { id }, include: { plan: true } })
   },
 
+  // Minimal, hot-path read for requireAuth: runs on every authenticated
+  // request, so it selects only what the gate needs (no plan join).
+  findAuthState(id: string) {
+    return prisma.user.findUnique({
+      where: { id },
+      select: { id: true, status: true, emailVerifiedAt: true, tokensValidAfter: true },
+    })
+  },
+
+  // Invalidates every access token issued before now (see requireAuth).
+  revokeAccessTokens(id: string) {
+    return prisma.user.update({ where: { id }, data: { tokensValidAfter: new Date() }, select: { id: true } })
+  },
+
   create(data: Prisma.UserCreateInput): Promise<UserWithPlan> {
     return prisma.user.create({ data, include: { plan: true } })
   },

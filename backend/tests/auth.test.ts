@@ -17,7 +17,8 @@ jest.mock('../src/services/NextcloudService', () => {
 
 import { createApp } from '../src/app'
 import { prisma } from '../src/database/prisma'
-import { decrypt } from '../src/utils/encryption'
+import { hashToken } from '../src/utils/jwt'
+import { generateRandomToken } from '../src/utils/token'
 
 // This is a real Postgres integration suite; allow for a cold database connection.
 jest.setTimeout(30000)
@@ -27,6 +28,16 @@ jest.setTimeout(30000)
 // `npm run prisma:migrate` must have been run against that database first.
 
 const app = createApp()
+
+// Tokens are minted straight into the database: the API (rightly) never
+// returns them in a response, so a test has to play the part of the inbox.
+async function mintToken(kind: 'verify' | 'reset', userId: string): Promise<string> {
+  const raw = generateRandomToken()
+  const data = { userId, tokenHash: hashToken(raw), expiresAt: new Date(Date.now() + 60 * 60 * 1000) }
+  if (kind === 'verify') await prisma.emailVerificationToken.create({ data })
+  else await prisma.passwordResetToken.create({ data })
+  return raw
+}
 
 const testUser = {
   name: 'Test User',
@@ -59,7 +70,10 @@ describe('Auth flow', () => {
     expect(res.body.data.user.email).toBe(testUser.email)
     expect(res.body.data.user.avatarInitials).toBe('TU')
     expect(res.body.data.verificationRequired).toBe(true)
-    verificationToken = res.body.data.devToken
+    // The response must never carry a token — it only ever travels by email.
+    expect(JSON.stringify(res.body)).not.toMatch(/devToken|token/i)
+    const created = await prisma.user.findUnique({ where: { email: testUser.email } })
+    verificationToken = await mintToken('verify', created!.id)
   })
 
   it('records the agreement acceptance for the new account', async () => {
@@ -143,8 +157,9 @@ describe('Auth flow', () => {
 
     expect(res.status).toBe(200)
     expect(res.body.data.message).toMatch(/if an account exists/i)
-    // devToken only present outside production — this suite runs with NODE_ENV=test
-    expect(res.body.data.devToken).toBeDefined()
+    // The reset token is only ever emailed, never returned.
+    expect(res.body.data.devToken).toBeUndefined()
+    expect(JSON.stringify(res.body)).not.toMatch(/token/i)
   })
 
   it('returns the same generic message for an unknown email (no enumeration)', async () => {
@@ -194,30 +209,57 @@ describe('Auth flow', () => {
     expect(replayRes.status).toBe(401)
   })
 
-  it('resets the password using the stored Nextcloud username, not the email address', async () => {
+  it('resets the password without touching Nextcloud, and revokes every existing session', async () => {
     const userBefore = await prisma.user.findUnique({ where: { email: testUser.email } })
     expect(userBefore).toBeTruthy()
-    expect(userBefore!.nextcloudUsername).toBe(userBefore!.id)
+    mockChangePassword.mockClear()
 
-    const forgotRes = await request(app)
-      .post('/api/auth/forgot-password')
-      .send({ email: testUser.email })
+    // Log in first so there is a live session and access token to be revoked.
+    const loginRes = await request(app).post('/api/auth/login').send({ email: testUser.email, password: testUser.password })
+    expect(loginRes.status).toBe(200)
+    const oldAccessToken = loginRes.body.data.accessToken
+    const oldCookie = loginRes.headers['set-cookie']
 
-    expect(forgotRes.status).toBe(200)
-    const devToken = forgotRes.body.data.devToken
-    expect(devToken).toBeDefined()
-
-    const resetRes = await request(app)
-      .post('/api/auth/reset-password')
-      .send({ token: devToken, password: 'ResetPassword123!' })
-
+    const rawToken = await mintToken('reset', userBefore!.id)
+    const resetRes = await request(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'ResetPassword123!' })
     expect(resetRes.status).toBe(200)
-    expect(mockChangePassword).toHaveBeenCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
+
+    // Nextcloud credentials are independent random secrets now.
+    expect(mockChangePassword).not.toHaveBeenCalled()
 
     const updated = await prisma.user.findUnique({ where: { email: testUser.email } })
     expect(updated?.passwordHash).not.toBe(userBefore?.passwordHash)
-    expect(updated?.nextcloudWebdavPasswordEncrypted).not.toBe(userBefore?.nextcloudWebdavPasswordEncrypted)
-    expect(decrypt(updated!.nextcloudWebdavPasswordEncrypted!)).toBe('rotated-webdav-password')
-    expect(mockChangePassword).toHaveBeenLastCalledWith(userBefore!.nextcloudUsername ?? userBefore!.id, 'ResetPassword123!')
+    expect(updated?.nextcloudWebdavPasswordEncrypted).toBe(userBefore?.nextcloudWebdavPasswordEncrypted)
+
+    // Token is single use.
+    const replay = await request(app).post('/api/auth/reset-password').send({ token: rawToken, password: 'AnotherPassword123!' })
+    expect(replay.status).toBe(400)
+
+    // The pre-reset access token and refresh cookie are both dead.
+    expect((await request(app).get('/api/auth/me').set('Authorization', `Bearer ${oldAccessToken}`)).status).toBe(401)
+    expect((await request(app).post('/api/auth/refresh-token').set('Cookie', oldCookie)).status).toBe(401)
+
+    // Old password no longer works; the new one does.
+    expect((await request(app).post('/api/auth/login').send({ email: testUser.email, password: testUser.password })).status).toBe(401)
+    expect((await request(app).post('/api/auth/login').send({ email: testUser.email, password: 'ResetPassword123!' })).status).toBe(200)
+  })
+
+  it('detects refresh-token reuse and revokes the whole session family', async () => {
+    const loginRes = await request(app).post('/api/auth/login').send({ email: testUser.email, password: 'ResetPassword123!' })
+    const stolenCookie = loginRes.headers['set-cookie']
+
+    // Legitimate rotation consumes the cookie...
+    const rotated = await request(app).post('/api/auth/refresh-token').set('Cookie', stolenCookie)
+    expect(rotated.status).toBe(200)
+    const newCookie = rotated.headers['set-cookie']
+
+    // ...age the rotation past the grace window, then replay the old cookie.
+    await prisma.session.updateMany({ where: { rotatedAt: { not: null } }, data: { rotatedAt: new Date(Date.now() - 60_000) } })
+    const replay = await request(app).post('/api/auth/refresh-token').set('Cookie', stolenCookie)
+    expect(replay.status).toBe(401)
+
+    // The victim's freshly rotated cookie is revoked too.
+    const afterTheft = await request(app).post('/api/auth/refresh-token').set('Cookie', newCookie)
+    expect(afterTheft.status).toBe(401)
   })
 })

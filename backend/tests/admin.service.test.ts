@@ -4,6 +4,7 @@ const mockCount = jest.fn()
 const mockCountAdmins = jest.fn()
 const mockUpdate = jest.fn()
 const mockDelete = jest.fn()
+const mockRevokeAccessTokens = jest.fn()
 
 jest.mock('../src/repositories/user.repository', () => ({
   userRepository: {
@@ -13,6 +14,7 @@ jest.mock('../src/repositories/user.repository', () => ({
     countAdmins: mockCountAdmins,
     update: mockUpdate,
     delete: mockDelete,
+    revokeAccessTokens: mockRevokeAccessTokens,
   },
 }))
 
@@ -40,6 +42,15 @@ const mockFindAllPlans = jest.fn()
 
 jest.mock('../src/repositories/plan.repository', () => ({
   planRepository: { findAll: mockFindAllPlans },
+}))
+
+// accountDeletion.service (shared with admin delete) cancels Razorpay autopay.
+const mockFindBilling = jest.fn().mockResolvedValue([])
+jest.mock('../src/repositories/billingSubscription.repository', () => ({
+  billingSubscriptionRepository: { findByUserId: mockFindBilling, updateStatus: jest.fn() },
+}))
+jest.mock('../src/services/RazorpayService', () => ({
+  razorpayService: { cancelSubscription: jest.fn() },
 }))
 
 const mockProvisionUser = jest.fn()

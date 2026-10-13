@@ -134,6 +134,10 @@ export const filesController = {
     res.setHeader('Content-Type', stat.mimeType ?? 'application/octet-stream')
     res.setHeader('Content-Disposition', 'inline')
     res.setHeader('X-Content-Type-Options', 'nosniff')
+    // User-uploaded HTML/SVG must never run script in this API's origin, even
+    // if someone navigates to a preview URL directly: sandbox + no resources.
+    res.setHeader('Content-Security-Policy', "default-src 'none'; img-src 'self' data:; media-src 'self'; style-src 'unsafe-inline'; sandbox")
+    res.setHeader('Cross-Origin-Resource-Policy', 'same-site')
     if (stat.size) res.setHeader('Content-Length', String(stat.size))
     stream.on('error', () => res.end())
     stream.pipe(res)

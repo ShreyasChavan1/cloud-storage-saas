@@ -50,6 +50,7 @@ jest.mock('../src/services/WebDavService', () => {
   }
 })
 
+import { InvalidPathError } from '../src/utils/davPath'
 import { filesService } from '../src/services/files.service'
 import { WebDavError } from '../src/services/WebDavService'
 import { encrypt } from '../src/utils/encryption'
@@ -128,11 +129,8 @@ describe('filesService', () => {
 
     it('rejects a path attempting traversal before ever calling WebDAV', async () => {
       mockUserRow()
-      // sanitizeDavPath neutralizes rather than always throwing — the real
-      // guarantee under test is that WebDAV never sees a raw ".." segment.
-      await filesService.list('user-1', '/Documents/../../secret')
-      const [, , calledPath] = mockListDirectory.mock.calls[0]
-      expect(calledPath).not.toContain('..')
+      await expect(filesService.list('user-1', '/Documents/../../secret')).rejects.toThrow(InvalidPathError)
+      expect(mockListDirectory).not.toHaveBeenCalled()
     })
   })
 

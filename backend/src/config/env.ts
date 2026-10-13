@@ -2,7 +2,18 @@ import 'dotenv/config'
 import { z } from 'zod'
 
 const envSchema = z.object({
-  NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
+  // Deliberately NO default. A forgotten NODE_ENV used to fall back to
+  // 'development', which is the mode that relaxed production-only safety
+  // checks. Failing to boot is the safer way to find out it was never set.
+  NODE_ENV: z.enum(['development', 'test', 'production'], {
+    errorMap: () => ({ message: "NODE_ENV must be set explicitly to 'development', 'test' or 'production'" }),
+  }),
+  // How many reverse-proxy hops sit in front of this app (Railway/Render/
+  // nginx = 1). Without it, req.ip is the proxy's address, so every user
+  // shares one rate-limit bucket. Set 0 if the app is exposed directly,
+  // otherwise a client can spoof X-Forwarded-For to dodge rate limits.
+  GLOBAL_RATE_LIMIT_PER_15MIN: z.coerce.number().int().min(50).default(1500),
+  TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(5).default(1),
   PORT: z.coerce.number().default(4000),
   CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
 
@@ -103,6 +114,15 @@ const envSchema = z.object({
     })
   }
   if (values.NODE_ENV === 'production') {
+    for (const key of ['JWT_ACCESS_SECRET', 'JWT_REFRESH_SECRET'] as const) {
+      const value = values[key]
+      if (value.length < 32 || /replace-with|changeme|example|secret-not-for/i.test(value)) {
+        ctx.addIssue({ code: z.ZodIssueCode.custom, path: [key], message: `${key} must be a random string of at least 32 characters in production (not a placeholder)` })
+      }
+    }
+    if (values.JWT_ACCESS_SECRET === values.JWT_REFRESH_SECRET) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['JWT_REFRESH_SECRET'], message: 'JWT_REFRESH_SECRET must differ from JWT_ACCESS_SECRET' })
+    }
     if (!values.RESEND_API_KEY) {
       ctx.addIssue({ code: z.ZodIssueCode.custom, path: ['RESEND_API_KEY'], message: 'RESEND_API_KEY is required in production' })
     }

@@ -1,4 +1,4 @@
-import { sanitizeDavPath, InvalidPathError } from '../src/utils/davPath'
+import { sanitizeDavPath, InvalidPathError, assertSafeFileName, isSafeSegmentId } from '../src/utils/davPath'
 
 describe('sanitizeDavPath', () => {
   it('defaults empty/undefined/null to root', () => {
@@ -41,15 +41,22 @@ describe('sanitizeDavPath', () => {
     }
   })
 
-  it('fully collapses traversal buried mid-path down to a still-rooted result', () => {
-    // Whatever this normalizes to, it can never climb above the anchor "/" —
-    // path.posix.normalize() mathematically cannot produce that. The
-    // WebDAV client's own base URL already has this user's root baked in
-    // (…/files/<uuid>), so a normalized "/etc/passwd" here means a file
-    // INSIDE that user's own space, never the real server filesystem.
-    const result = sanitizeDavPath('/Documents/../../../etc/passwd')
-    expect(result).toBe('/etc/passwd')
-    expect(result).not.toContain('..')
+  it('rejects ".." segments instead of silently resolving them', () => {
+    for (const attempt of ['/Documents/../../../etc/passwd', '/a/../b', '..', '../x', 'x/..']) {
+      expect(() => sanitizeDavPath(attempt)).toThrow(InvalidPathError)
+    }
+  })
+
+  it('rejects backslashes and control characters', () => {
+    for (const attempt of ['..\\secret', '/a\\b', '/a\r\nb', '/a\x07b']) {
+      expect(() => sanitizeDavPath(attempt)).toThrow(InvalidPathError)
+    }
+  })
+
+  it('treats percent-encoded traversal as literal text, never decoding it', () => {
+    // %2e%2e is just characters in one segment; it is re-encoded on the way
+    // out (to %252e%252e), so it cannot become "..".
+    expect(sanitizeDavPath('/%2e%2e/%2e%2e/secret')).toBe('/%2e%2e/%2e%2e/secret')
   })
 
   it('rejects null bytes', () => {
@@ -63,5 +70,26 @@ describe('sanitizeDavPath', () => {
   it('rejects non-string input', () => {
     // @ts-expect-error deliberately wrong type, exercising the runtime guard
     expect(() => sanitizeDavPath(123)).toThrow(InvalidPathError)
+  })
+})
+
+describe('assertSafeFileName', () => {
+  it('accepts ordinary names', () => {
+    expect(assertSafeFileName('report (final).pdf')).toBe('report (final).pdf')
+  })
+  it('rejects anything that is not a single plain segment', () => {
+    for (const bad of ['..', '.', '../x', 'a/b', 'a\\b', '', 'x\0y', 'a'.repeat(256), 5 as unknown as string]) {
+      expect(() => assertSafeFileName(bad)).toThrow(InvalidPathError)
+    }
+  })
+})
+
+describe('isSafeSegmentId', () => {
+  it('allows Nextcloud-style trash ids (spaces, unicode, dots)', () => {
+    expect(isSafeSegmentId('my report.pdf.d1699999999')).toBe(true)
+    expect(isSafeSegmentId('résumé.docx.d1699999999')).toBe(true)
+  })
+  it('rejects ids that could re-point the URL', () => {
+    for (const bad of ['', '.', '..', 'a/b', '../x', 'a\\b']) expect(isSafeSegmentId(bad)).toBe(false)
   })
 })

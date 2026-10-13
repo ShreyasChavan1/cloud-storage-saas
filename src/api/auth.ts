@@ -13,7 +13,9 @@ export interface AuthUser {
 }
 
 interface AuthResponse { user: AuthUser; accessToken: string }
-export interface RegistrationResult { user: AuthUser; verificationRequired: true; devToken?: string }
+export interface RegistrationResult { user: AuthUser; verificationRequired: true }
+
+let inflightRefresh: Promise<AuthResponse> | null = null
 
 // Every call here unwraps the backend's { success, data } envelope once,
 // so nothing above this file ever touches that shape directly.
@@ -41,10 +43,20 @@ export const authApi = {
 
   logout: () => api.post('/auth/logout').then(() => undefined),
 
-  refreshToken: () => api.post<{ data: AuthResponse }>('/auth/refresh-token').then((r) => r.data.data),
+  // One in-flight call shared by every caller. The backend rotates the refresh
+  // token on each use and treats a replay as theft, so two simultaneous calls
+  // with the same cookie (React StrictMode's double effect in dev, two
+  // components restoring the session) must not both hit the server.
+  refreshToken: (): Promise<AuthResponse> => {
+    inflightRefresh ??= api
+      .post<{ data: AuthResponse }>('/auth/refresh-token')
+      .then((r) => r.data.data)
+      .finally(() => { inflightRefresh = null })
+    return inflightRefresh
+  },
 
   forgotPassword: (email: string) =>
-    api.post<{ data: { message: string; devToken?: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
+    api.post<{ data: { message: string } }>('/auth/forgot-password', { email }).then((r) => r.data.data),
 
   resetPassword: (token: string, password: string) =>
     api.post('/auth/reset-password', { token, password }).then(() => undefined),

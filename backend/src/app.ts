@@ -8,11 +8,15 @@ import routes from './routes'
 import webhookRoutes from './routes/webhook.routes'
 import { notFoundMiddleware } from './middleware/notFound.middleware'
 import { errorMiddleware } from './middleware/error.middleware'
+import { globalApiRateLimiter } from './middleware/rateLimiter.middleware'
 
 export function createApp() {
   const app = express()
 
   app.disable('x-powered-by')
+  // Without this, req.ip behind a proxy/load balancer is the proxy's address
+  // and every user shares one rate-limit bucket. See TRUST_PROXY_HOPS in env.ts.
+  app.set('trust proxy', env.TRUST_PROXY_HOPS)
   app.use(
   helmet({
     contentSecurityPolicy: {
@@ -46,6 +50,7 @@ export function createApp() {
   app.use(express.urlencoded({ extended: true }))
   app.use(cookieParser())
 
+  app.use('/api', globalApiRateLimiter)
   app.use('/api', routes)
 
   app.use(notFoundMiddleware)
