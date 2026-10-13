@@ -1,0 +1,274 @@
+--- a/src/components/app/NextcloudConnect.tsx
++++ b/src/components/app/NextcloudConnect.tsx
+@@ -0,0 +1,46 @@
++import { useState } from 'react'
++import { Copy } from 'lucide-react'
++import { Button } from '@/components/ui/Button'
++
++// Shared by the Mobile App and Desktop App pages so the server address and
++// the sign-in password wording are defined once. Nimbus's storage backend is
++// a real Nextcloud account under the hood, so the official Nextcloud clients
++// connect to it as-is.
++export const NEXTCLOUD_SERVER_URL = 'https://cloud.dv-technologies.in'
++
++export function CopyField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
++  const [copied, setCopied] = useState(false)
++  return (
++    <div>
++      <div className="text-xs font-medium text-ink-500 dark:text-ink-400">{label}</div>
++      <div className="mt-1 flex items-center gap-2">
++        <code className={`flex-1 truncate rounded-lg border border-line bg-surface-50 px-3 py-2 text-sm dark:border-dark-border dark:bg-dark-surface2 ${mono ? 'font-mono' : ''}`}>
++          {value}
++        </code>
++        <Button
++          size="sm"
++          variant="secondary"
++          onClick={async () => {
++            await navigator.clipboard?.writeText(value)
++            setCopied(true)
++            window.setTimeout(() => setCopied(false), 1800)
++          }}
++        >
++          <Copy className="h-3.5 w-3.5" />
++          {copied ? 'Copied' : 'Copy'}
++        </Button>
++      </div>
++    </div>
++  )
++}
++
++export function PasswordNote() {
++  return (
++    <div>
++      <div className="text-xs font-medium text-ink-500 dark:text-ink-400">Password</div>
++      <p className="mt-1 rounded-lg border border-line bg-surface-50 px-3 py-2 text-sm dark:border-dark-border dark:bg-dark-surface2">
++        Use your regular DVT account password — the one you log into this site with.
++      </p>
++    </div>
++  )
++}
+--- a/src/pages/DesktopApp.tsx
++++ b/src/pages/DesktopApp.tsx
+@@ -0,0 +1,76 @@
++import { Monitor, ExternalLink } from 'lucide-react'
++import { Card } from '@/components/ui/Card'
++import { useAuth } from '@/context/AuthContext'
++import { CopyField, PasswordNote, NEXTCLOUD_SERVER_URL } from '@/components/app/NextcloudConnect'
++
++// Nextcloud's official desktop sync client — same reasoning as the Mobile
++// App page: the storage backend is a real Nextcloud account, so the official
++// client works against it directly. These all point at Nextcloud's official
++// download page; swap in a direct installer URL per platform here if wanted.
++const NEXTCLOUD_DOWNLOAD_PAGE = 'https://nextcloud.com/install/#install-clients'
++const WINDOWS_APP_URL = NEXTCLOUD_DOWNLOAD_PAGE
++const MAC_APP_URL = NEXTCLOUD_DOWNLOAD_PAGE
++const LINUX_APP_URL = NEXTCLOUD_DOWNLOAD_PAGE
++
++const primaryLink =
++  'inline-flex h-9 items-center gap-2 rounded-lg bg-accent-500 px-3 text-sm font-medium text-white hover:bg-accent-600'
++const secondaryLink =
++  'inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface-0 px-3 text-sm font-medium text-ink-900 hover:bg-surface-50 dark:border-dark-border dark:bg-dark-surface dark:text-white'
++
++export default function DesktopApp() {
++  const { user } = useAuth()
++
++  return (
++    <div className="mx-auto max-w-3xl space-y-6 p-6">
++      <div>
++        <h1 className="text-xl font-semibold text-ink-900 dark:text-white">Desktop App</h1>
++        <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">
++          Access your files from your computer using the official Nextcloud desktop app — your storage
++          runs on Nextcloud under the hood, so the real Nextcloud app connects to it directly and your
++          files appear in a normal folder on your computer.
++        </p>
++      </div>
++
++      <Card className="p-5">
++        <div className="flex items-center gap-2 text-sm font-medium">
++          <Monitor className="h-4 w-4" />
++          1. Install the app
++        </div>
++        <div className="mt-3 flex flex-wrap gap-3">
++          <a href={WINDOWS_APP_URL} target="_blank" rel="noreferrer" className={primaryLink}>
++            <ExternalLink className="h-4 w-4" />
++            Windows
++          </a>
++          <a href={MAC_APP_URL} target="_blank" rel="noreferrer" className={secondaryLink}>
++            <ExternalLink className="h-4 w-4" />
++            macOS
++          </a>
++          <a href={LINUX_APP_URL} target="_blank" rel="noreferrer" className={secondaryLink}>
++            <ExternalLink className="h-4 w-4" />
++            Linux (AppImage)
++          </a>
++        </div>
++        <p className="mt-3 text-xs text-ink-500 dark:text-ink-400">
++          Requires Windows 10 or newer (64-bit) or macOS 12 or newer. On Linux, a password manager such as
++          GNOME Keyring or KWallet must be running so the app can stay signed in.
++        </p>
++      </Card>
++
++      <Card className="p-5">
++        <div className="flex items-center gap-2 text-sm font-medium">
++          <Monitor className="h-4 w-4" />
++          2. Connect it to your account
++        </div>
++        <p className="mt-1 text-xs text-ink-500 dark:text-ink-400">
++          Open the app, choose "Log in to your Nextcloud", and enter these values exactly as shown.
++          If your browser opens for sign-in, use the same username and password there.
++        </p>
++        <div className="mt-4 space-y-4">
++          <CopyField label="Server address" value={NEXTCLOUD_SERVER_URL} />
++          <CopyField label="Username" value={user?.id ?? ''} />
++          <PasswordNote />
++        </div>
++      </Card>
++    </div>
++  )
++}
+--- a/src/pages/AppDownloadPages.test.tsx
++++ b/src/pages/AppDownloadPages.test.tsx
+@@ -0,0 +1,42 @@
++import { render, screen } from '@testing-library/react'
++import { MemoryRouter } from 'react-router-dom'
++import { describe, expect, it, vi } from 'vitest'
++
++vi.mock('@/context/AuthContext', () => ({
++  useAuth: () => ({ user: { id: 'user-123', role: 'USER' } }),
++}))
++
++import DesktopApp from './DesktopApp'
++import MobileApp from './MobileApp'
++import { NEXTCLOUD_SERVER_URL } from '@/components/app/NextcloudConnect'
++
++const wrap = (ui: JSX.Element) => render(<MemoryRouter>{ui}</MemoryRouter>)
++
++describe('Desktop App page', () => {
++  it('offers Windows, macOS and Linux downloads that open safely in a new tab', () => {
++    wrap(<DesktopApp />)
++    for (const label of [/^windows$/i, /^macos$/i, /linux/i]) {
++      const link = screen.getByRole('link', { name: label })
++      expect(link.getAttribute('href')).toMatch(/^https:\/\//)
++      expect(link.getAttribute('target')).toBe('_blank')
++      expect(link.getAttribute('rel')).toContain('noreferrer')
++    }
++  })
++
++  it('shows the same connection details as the mobile page', () => {
++    wrap(<DesktopApp />)
++    expect(screen.getByText(NEXTCLOUD_SERVER_URL)).toBeTruthy()
++    expect(screen.getByText('user-123')).toBeTruthy()
++    expect(screen.getByText(/regular DVT account password/i)).toBeTruthy()
++  })
++})
++
++describe('Mobile App page (unchanged behaviour after sharing components)', () => {
++  it('still shows store links and the same connection details', () => {
++    wrap(<MobileApp />)
++    expect(screen.getByRole('link', { name: /ios/i })).toBeTruthy()
++    expect(screen.getByRole('link', { name: /google play/i })).toBeTruthy()
++    expect(screen.getByText(NEXTCLOUD_SERVER_URL)).toBeTruthy()
++    expect(screen.getByText('user-123')).toBeTruthy()
++  })
++})
+--- a/src/pages/MobileApp.tsx
++++ b/src/pages/MobileApp.tsx
+@@ -1,43 +1,15 @@
+-import { useState } from 'react'
+-import { Smartphone, Copy, ExternalLink, AlertTriangle } from 'lucide-react'
++import { Smartphone, ExternalLink } from 'lucide-react'
+ import { Card } from '@/components/ui/Card'
+-import { Button } from '@/components/ui/Button'
++import { CopyField, PasswordNote, NEXTCLOUD_SERVER_URL } from '@/components/app/NextcloudConnect'
+ import { useAuth } from '@/context/AuthContext'
+ 
+ // Nextcloud's own official client — Nimbus's storage backend is a real
+ // Nextcloud account under the hood (see backend/README.md), so the
+ // official app works against it as-is. No Nimbus-specific app needed.
+-const NEXTCLOUD_SERVER_URL = 'https://cloud.dv-technologies.in'
+ const IOS_APP_URL = 'https://apps.apple.com/app/nextcloud/id1125420102'
+ const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=com.nextcloud.client'
+ const FDROID_APP_URL = 'https://f-droid.org/packages/com.nextcloud.client/'
+ 
+-function CopyField({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+-  const [copied, setCopied] = useState(false)
+-  return (
+-    <div>
+-      <div className="text-xs font-medium text-ink-500 dark:text-ink-400">{label}</div>
+-      <div className="mt-1 flex items-center gap-2">
+-        <code className={`flex-1 truncate rounded-lg border border-line bg-surface-50 px-3 py-2 text-sm dark:border-dark-border dark:bg-dark-surface2 ${mono ? 'font-mono' : ''}`}>
+-          {value}
+-        </code>
+-        <Button
+-          size="sm"
+-          variant="secondary"
+-          onClick={async () => {
+-            await navigator.clipboard?.writeText(value)
+-            setCopied(true)
+-            window.setTimeout(() => setCopied(false), 1800)
+-          }}
+-        >
+-          <Copy className="h-3.5 w-3.5" />
+-          {copied ? 'Copied' : 'Copy'}
+-        </Button>
+-      </div>
+-    </div>
+-  )
+-}
+-
+ export default function MobileApp() {
+   const { user } = useAuth()
+ 
+@@ -83,12 +55,7 @@
+         <div className="mt-4 space-y-4">
+           <CopyField label="Server address" value={NEXTCLOUD_SERVER_URL} />
+           <CopyField label="Username" value={user?.id ?? ''} />
+-          <div>
+-            <div className="text-xs font-medium text-ink-500 dark:text-ink-400">Password</div>
+-            <p className="mt-1 rounded-lg border border-line bg-surface-50 px-3 py-2 text-sm dark:border-dark-border dark:bg-dark-surface2">
+-              Use your regular DVT account password — the one you log into this site with.
+-            </p>
+-          </div>
++          <PasswordNote />
+         </div>
+       </Card>
+ 
+--- a/src/App.tsx
++++ b/src/App.tsx
+@@ -8,6 +8,7 @@
+ import Files from '@/pages/Files'
+ import Settings from '@/pages/Settings'
+ import MobileApp from '@/pages/MobileApp'
++import DesktopApp from '@/pages/DesktopApp'
+ import Support from '@/pages/Support'
+ import Pricing from '@/pages/Pricing'
+ import NotFound from '@/pages/NotFound'
+@@ -44,6 +45,7 @@
+         <Route path="/settings" element={<Settings />} />
+         <Route path="/cctv" element={<Settings only="cctv" />} />
+         <Route path="/mobile-app" element={<MobileApp />} />
++        <Route path="/desktop-app" element={<DesktopApp />} />
+         <Route path="/support" element={<Support />} />
+         {/* adminOnly is a UX redirect only — the backend's requireAdmin
+             middleware is the actual authorization boundary. A non-admin
+--- a/src/components/layout/Sidebar.tsx
++++ b/src/components/layout/Sidebar.tsx
+@@ -1,5 +1,5 @@
+ import { NavLink } from 'react-router-dom'
+-import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy, Loader2, Video } from 'lucide-react'
++import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, Monitor, LifeBuoy, Loader2, Video } from 'lucide-react'
+ import { Logo } from '@/components/ui/Logo'
+ import { ProgressBar } from '@/components/ui/ProgressBar'
+ import { useQuota } from '@/hooks/useQuota'
+@@ -76,6 +76,11 @@
+             Mobile App
+           </NavLink>
+ 
++          <NavLink to="/desktop-app" onClick={onClose} className={navLinkClassName}>
++            <Monitor className="h-[18px] w-[18px]" strokeWidth={2} />
++            Desktop App
++          </NavLink>
++
+           <NavLink to="/support" onClick={onClose} className={navLinkClassName}>
+             <LifeBuoy className="h-[18px] w-[18px]" strokeWidth={2} />
+             Support

@@ -8,6 +8,7 @@ import Dashboard from '@/pages/Dashboard'
 import Files from '@/pages/Files'
 import Settings from '@/pages/Settings'
 import MobileApp from '@/pages/MobileApp'
+import DesktopApp from '@/pages/DesktopApp'
 import Support from '@/pages/Support'
 import Pricing from '@/pages/Pricing'
 import NotFound from '@/pages/NotFound'
@@ -44,6 +45,7 @@ export default function App() {
         <Route path="/settings" element={<Settings />} />
         <Route path="/cctv" element={<Settings only="cctv" />} />
         <Route path="/mobile-app" element={<MobileApp />} />
+        <Route path="/desktop-app" element={<DesktopApp />} />
         <Route path="/support" element={<Support />} />
         {/* adminOnly is a UX redirect only — the backend's requireAdmin
             middleware is the actual authorization boundary. A non-admin

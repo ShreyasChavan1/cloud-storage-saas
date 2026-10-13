@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router-dom'
-import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, LifeBuoy, Loader2, Video } from 'lucide-react'
+import { LayoutDashboard, Folder, Star, Trash2, Settings, Sparkles, ShieldCheck, Smartphone, Monitor, LifeBuoy, Loader2, Video } from 'lucide-react'
 import { Logo } from '@/components/ui/Logo'
 import { ProgressBar } from '@/components/ui/ProgressBar'
 import { useQuota } from '@/hooks/useQuota'
@@ -74,6 +74,11 @@ export function Sidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClose:
           <NavLink to="/mobile-app" onClick={onClose} className={navLinkClassName}>
             <Smartphone className="h-[18px] w-[18px]" strokeWidth={2} />
             Mobile App
+          </NavLink>
+
+          <NavLink to="/desktop-app" onClick={onClose} className={navLinkClassName}>
+            <Monitor className="h-[18px] w-[18px]" strokeWidth={2} />
+            Desktop App
           </NavLink>
 
           <NavLink to="/support" onClick={onClose} className={navLinkClassName}>
