@@ -472,7 +472,7 @@ const Home = () => {
         <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
           <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
             <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
-              <div className="lg:order-1">
+              <div className="order-2 lg:order-1">
                 <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
                   Mobile applications developed around approved features and real
                   user needs, with support across interface development, backend
@@ -499,7 +499,7 @@ const Home = () => {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="lg:order-2 lg:text-right">
+              <div className="order-1 lg:order-2 lg:text-right">
                 <div className="mb-5 text-sm font-semibold text-[#D86520]">02</div>
                 <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
                   Mobile App Solutions
@@ -554,7 +554,7 @@ const Home = () => {
         <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
           <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
             <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
-              <div>
+              <div className="order-2 lg:order-1">
                 <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
                   Campaign planning, audience targeting and coordination for selected
                   online and social platforms, with support for ongoing advertising
@@ -581,7 +581,7 @@ const Home = () => {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="text-left lg:text-right">
+              <div className="order-1 text-left lg:order-2 lg:text-right">
                 <div className="mb-5 text-sm font-semibold text-[#D86520]">04</div>
                 <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
                   Digital Advertising
@@ -636,7 +636,7 @@ const Home = () => {
         <section className="border-b border-[#DDD6C8] bg-[#F3EFE7]">
           <div className="mx-auto max-w-7xl px-6 py-20 lg:px-8 lg:py-24">
             <div className="grid items-start gap-12 lg:grid-cols-[1.2fr_0.8fr] lg:gap-20">
-              <div>
+              <div className="order-2 lg:order-1">
                 <p className="max-w-3xl text-lg leading-8 !text-[#444B55]">
                   Ongoing support for websites, applications and selected digital
                   services, including updates, troubleshooting, content changes
@@ -663,7 +663,7 @@ const Home = () => {
                   <ArrowRight className="h-4 w-4" />
                 </Link>
               </div>
-              <div className="text-left lg:text-right">
+              <div className="order-1 text-left lg:order-2 lg:text-right">
                 <div className="mb-5 text-sm font-semibold text-[#D86520]">06</div>
                 <h3 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
                   Maintenance & Support
