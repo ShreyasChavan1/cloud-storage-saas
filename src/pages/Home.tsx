@@ -144,8 +144,7 @@ const Home = () => {
 
                 <p className="mt-5 max-w-2xl text-base leading-7 !text-[#62645F] sm:text-lg">
                   DV Technologies provides secure cloud storage for your files,
-                  automatic CCTV backup, and NVR recording backup from one
-                  simple platform.
+                  automatic CCTV backup, And Digital Business Solutions.
                 </p>
 
                 <div className="mt-7 flex flex-col gap-3 sm:flex-row">
