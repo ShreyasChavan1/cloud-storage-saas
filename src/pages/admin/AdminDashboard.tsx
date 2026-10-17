@@ -4,6 +4,7 @@ import { AdminUsersTable } from '@/components/admin/AdminUsersTable'
 import { SupportContactCard } from '@/components/admin/SupportContactCard'
 import { ObjectStorageCard } from '@/components/admin/ObjectStorageCard'
 import { AdminClientFormsTable } from '@/components/admin/AdminClientFormsTable'
+import { AdminFeedbackTable } from '@/components/admin/AdminFeedbackTable'
 import { useAdminOverview, useAdminStorageOverview } from '@/hooks/useAdminUsers'
 import { formatBytes } from '@/lib/formatBytes'
 
@@ -82,6 +83,10 @@ export default function AdminDashboard() {
 
       <div className="mt-5">
         <AdminClientFormsTable />
+      </div>
+
+      <div className="mt-5">
+        <AdminFeedbackTable />
       </div>
     </div>
   )

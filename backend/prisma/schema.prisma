@@ -532,3 +532,18 @@ model ClientRequirementForm {
   @@index([status, createdAt])
   @@map("client_requirement_forms")
 }
+
+// Submissions of the public "Share your feedback" form on the home page.
+// Open to visitors without an account, so there is deliberately no user
+// relation; `email` is optional and only there so the team can reply.
+model Feedback {
+  id String @id @default(uuid())
+  rating Int
+  description String @db.Text
+  email String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([rating])
+  @@map("feedback")
+}

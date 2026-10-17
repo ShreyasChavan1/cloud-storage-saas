@@ -16,6 +16,8 @@ import {
   Folder,
   Star,
 } from "lucide-react";
+import { FeedbackForm } from "@/components/feedback/FeedbackForm";
+
 const reviews = [
   {
     name: "Rohan Mehta",
@@ -1014,6 +1016,31 @@ const Home = () => {
                 </figure>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* Feedback */}
+        <section
+          id="feedback"
+          className="border-b border-[#DDD6C8] bg-[#FFFDF9]"
+        >
+          <div className="mx-auto grid max-w-7xl gap-12 px-6 py-24 lg:grid-cols-2 lg:items-start lg:px-8 lg:py-28">
+            <div className="max-w-xl">
+              <div className="mb-5 text-xs font-semibold uppercase tracking-[0.12em] text-[#D86520]">
+                Feedback
+              </div>
+
+              <h2 className="text-3xl font-semibold tracking-[-0.025em] !text-[#132A4E] sm:text-4xl">
+                Tell us how we are doing.
+              </h2>
+
+              <p className="mt-5 leading-7 !text-[#62645F]">
+                Rate your experience and let us know what is working and what
+                could be better. Your feedback goes straight to the DVT team.
+              </p>
+            </div>
+
+            <FeedbackForm />
           </div>
         </section>
 

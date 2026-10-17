@@ -58,6 +58,18 @@ export const clientFormRateLimiter = rateLimit({
   },
 })
 
+// Public home-page feedback form (no login required). A genuine visitor
+// leaves one, maybe two; anything past that from one address is spam.
+export const feedbackRateLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: (_req, res) => {
+    sendError(res, 429, 'Too many submissions. Please try again later.')
+  },
+})
+
 const FIFTEEN_MIN = 15 * 60 * 1000
 
 // Normalised so "A@x.com" and "a@x.com " share one bucket. Falls back to the

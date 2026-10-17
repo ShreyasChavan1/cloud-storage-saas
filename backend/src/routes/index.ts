@@ -8,6 +8,7 @@ import cctvRoutes from './cctv.routes'
 import shareRoutes from './share.routes'
 import supportRoutes from './support.routes'
 import clientFormRoutes from './clientForm.routes'
+import feedbackRoutes from './feedback.routes'
 
 const router = Router()
 
@@ -24,5 +25,6 @@ router.use('/cctv', cctvRoutes)
 router.use('/shares', shareRoutes)
 router.use('/support', supportRoutes)
 router.use('/client-forms', clientFormRoutes)
+router.use('/feedback', feedbackRoutes)
 
 export default router

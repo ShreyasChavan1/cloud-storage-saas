@@ -14,6 +14,8 @@ import {
 } from '../validators/admin.validator'
 import { updateSupportContactSchema } from '../validators/support.validator'
 import { clientFormController } from '../controllers/clientForm.controller'
+import { feedbackController } from '../controllers/feedback.controller'
+import { listFeedbackSchema, feedbackIdParamSchema } from '../validators/feedback.validator'
 import {
   listClientFormsSchema,
   clientFormIdParamSchema,
@@ -68,6 +70,8 @@ router.post('/reconcile-subscriptions', adminController.reconcileSubscriptions)
 router.get('/client-forms', validate(listClientFormsSchema), clientFormController.list)
 router.get('/client-forms/:id', validate(clientFormIdParamSchema), clientFormController.get)
 router.patch('/client-forms/:id', validate(updateClientFormSchema), clientFormController.update)
+router.get('/feedback', validate(listFeedbackSchema), feedbackController.list)
+router.delete('/feedback/:id', validate(feedbackIdParamSchema), feedbackController.remove)
 
 router.get('/settings/support', adminController.getSupportContact)
 router.put('/settings/support', validate(updateSupportContactSchema), adminController.updateSupportContact)
