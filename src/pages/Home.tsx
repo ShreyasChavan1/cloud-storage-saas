@@ -17,6 +17,7 @@ import {
   Star,
 } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback/FeedbackForm";
+import { useSupportContact } from "@/hooks/useSupportContact";
 
 const reviews = [
   {
@@ -60,6 +61,7 @@ const ReviewStars = () => (
 );
 
 const Home = () => {
+  const { contact } = useSupportContact();
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8F5EF] text-[#17233A]">
       {/* Navigation */}
@@ -1169,14 +1171,14 @@ const Home = () => {
                 <div>
                   <div className="text-[#8FA0B8]">Owner Email</div>
                   <div className="mt-1 text-white">
-                    dvtechnologies2026@gmail.com
+                    {contact?.email ?? "…"}
                   </div>
                 </div>
 
                 <div>
                   <div className="text-[#8FA0B8]">Phone</div>
                   <div className="mt-1 text-white">
-                    9665579916
+                    {contact?.phone ?? "…"}
                   </div>
                 </div>
               </div>

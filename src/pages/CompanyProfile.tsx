@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, Check } from 'lucide-react'
 import { PublicLayout } from '@/components/layout/PublicLayout'
+import { useSupportContact } from '@/hooks/useSupportContact'
 import {
   profileHero,
   introLetter,
@@ -60,6 +61,7 @@ function CheckList({ items }: { items: string[] }) {
 }
 
 export default function CompanyProfile() {
+  const { contact } = useSupportContact()
   return (
     <PublicLayout wide>
       {/* Cover */}
@@ -204,9 +206,16 @@ export default function CompanyProfile() {
         <h2 className="text-lg font-semibold text-[#132A4E]">DVT Contact</h2>
         <p className="mt-2 text-sm text-[#3F4652]">DVT Technologies, operated by the proprietor</p>
         <p className="mt-1 text-sm text-[#3F4652]">
-          Email: <a className="font-medium text-[#0F8A99] hover:underline" href="mailto:dvtechnologies2026@gmail.com">dvtechnologies2026@gmail.com</a>
+          Email:{' '}
+          {contact ? (
+            <a className="font-medium text-[#0F8A99] hover:underline" href={`mailto:${contact.email}`}>
+              {contact.email}
+            </a>
+          ) : (
+            '…'
+          )}
         </p>
-        <p className="mt-1 text-sm text-[#3F4652]">Phone: 9665579916</p>
+        <p className="mt-1 text-sm text-[#3F4652]">Phone: {contact?.phone ?? '…'}</p>
         <p className="mt-1 text-sm text-[#3F4652]">
           Website: <a className="font-medium text-[#0F8A99] hover:underline" href="https://www.dv-technologies.in">www.dv-technologies.in</a>
         </p>

@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom'
 import { AlertTriangle, Printer, ArrowRight } from 'lucide-react'
 import { PublicLayout } from '@/components/layout/PublicLayout'
+import { useSupportContact } from '@/hooks/useSupportContact'
 import {
   AGREEMENT_VERSION,
   SHOW_TEMPLATE_BANNER,
@@ -9,8 +10,6 @@ import {
 } from '@/data/serviceAgreement'
 
 const DOCUMENT_DATE = '10 October 2026'
-const SUPPORT_EMAIL = 'dvtechnologies2026@gmail.com'
-const CONTACT_PHONE = '9665579916'
 const WEBSITE = 'www.dv-technologies.in'
 
 
@@ -32,6 +31,8 @@ function normalizeAgreementParagraph(text: string): string {
 }
 
 export default function ServiceAgreement() {
+  // Same contact the admin edits under "Support Contact" — not typed in here.
+  const { contact } = useSupportContact()
   return (
     <PublicLayout>
       <div className="text-center">
@@ -108,14 +109,21 @@ export default function ServiceAgreement() {
             DVT Technologies, operated by its proprietor.
           </p>
           <p className="text-sm leading-7 text-[#3F4652]">
-            Email: <a className="font-medium text-[#0F8A99] hover:underline" href={`mailto:${SUPPORT_EMAIL}`}>{SUPPORT_EMAIL}</a>
+            Email:{' '}
+            {contact ? (
+              <a className="font-medium text-[#0F8A99] hover:underline" href={`mailto:${contact.email}`}>
+                {contact.email}
+              </a>
+            ) : (
+              '…'
+            )}
           </p>
-          <p className="text-sm leading-7 text-[#3F4652]">Phone: {CONTACT_PHONE}</p>
+          <p className="text-sm leading-7 text-[#3F4652]">Phone: {contact?.phone ?? '…'}</p>
           <p className="text-sm leading-7 text-[#3F4652]">
             Website: <a className="font-medium text-[#0F8A99] hover:underline" href={`https://${WEBSITE}`}>{WEBSITE}</a>
           </p>
           <p className="mt-2 text-xs leading-5 text-[#6C6A63]">
-            Support, privacy, grievance and billing contact: {SUPPORT_EMAIL}
+            Support, privacy, grievance and billing contact: {contact?.email ?? '…'}
           </p>
         </section>
       </article>

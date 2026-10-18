@@ -2,6 +2,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { adminApi, CreateUserInput } from '@/api/admin'
 import { SupportContact } from '@/api/support'
 import { adminQueryKeys } from './useAdminUsers'
+import { supportContactQueryKey } from './useSupportContact'
 
 // Broad-but-cheap: every mutation below changes something the users list
 // or the overview counts could reasonably reflect (a new user, a status
@@ -72,6 +73,9 @@ export function useUpdateSupportContact() {
     mutationFn: (input: SupportContact) => adminApi.updateSupportContact(input),
     onSuccess: (contact) => {
       queryClient.setQueryData(adminQueryKeys.supportContact, contact)
+      // The public pages (home footer, company profile, agreement) read the same
+      // details — refresh them too so they update without a reload.
+      queryClient.setQueryData(supportContactQueryKey, contact)
     },
   })
 }
