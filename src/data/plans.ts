@@ -1,4 +1,4 @@
-// Marketing copy for the three seeded Nimbus tiers. Pricing.tsx overlays
+// Marketing copy for the three seeded DVT Solutions tiers. Pricing.tsx overlays
 // the live price/storage values returned by GET /payments/plans so the
 // checkout cannot drift from the backend's actual billing configuration.
 export interface PricingPlan {

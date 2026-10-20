@@ -16,4 +16,4 @@ Unregister-ScheduledTask -TaskName $ServiceName -Confirm:$false -ErrorAction Sil
 $StartMenuDir = Join-Path $env:ProgramData "Microsoft\Windows\Start Menu\Programs\Nimbus"
 Remove-Item $StartMenuDir -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
-Write-Host "Nimbus NVR Gateway removed. Stored recordings in the local spool were removed with the gateway directory." -ForegroundColor Yellow
+Write-Host "DVT Solutions NVR Gateway removed. Stored recordings in the local spool were removed with the gateway directory." -ForegroundColor Yellow

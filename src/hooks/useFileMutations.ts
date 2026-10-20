@@ -11,6 +11,9 @@ import { storageStatsQueryKey } from './useStorageStats'
 // in sync.
 function invalidateStats(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: storageStatsQueryKey })
+  // Freeing (or using) space can lift (or trigger) the "uploads paused" state.
+  queryClient.invalidateQueries({ queryKey: ['quota'] })
+  queryClient.invalidateQueries({ queryKey: ['upload-status'] })
 }
 
 export function useUploadFile(currentPath: string | undefined) {

@@ -18,7 +18,7 @@ const ffmpegPath =
   join(process.env.NIMBUS_GATEWAY_DIR ?? process.cwd(), 'ffmpeg', 'ffmpeg.exe')
 
 if (!existsSync(ffmpegPath)) {
-  throw new Error(`FFmpeg not found at: ${ffmpegPath}. The Nimbus installer must install FFmpeg in the gateway directory.`)
+  throw new Error(`FFmpeg not found at: ${ffmpegPath}. The DVT Solutions installer must install FFmpeg in the gateway directory.`)
 }
 
 const apiUrl = (process.env.NIMBUS_API_URL ?? '').replace(/\/+$/, '')
@@ -38,7 +38,7 @@ async function loadToken() { if (!token) token = (await readFile(tokenFile, 'utf
 async function saveToken(value: string) { token = value; await writeFile(tokenFile, value, { mode: 0o600 }) }
 
 async function enroll() {
-  if (!enrollmentCode) throw new Error('Gateway is not enrolled. Set NIMBUS_ENROLLMENT_CODE to the one-time code from Nimbus.')
+  if (!enrollmentCode) throw new Error('Gateway is not enrolled. Set NIMBUS_ENROLLMENT_CODE to the one-time code from DVT Solutions.')
   const gatewayId = process.env.NIMBUS_GATEWAY_ID || `${hostname()}-${randomSuffix()}`
   const { data } = await axios.post(`${apiUrl}/api/cctv/gateway/enroll`, { enrollmentCode, gatewayId }, { timeout: 30000 })
   await saveToken(data.data.gateway.token)
@@ -145,7 +145,7 @@ async function refreshConfig() {
     if (changed) {
       await stopAll()
       config = next
-      if (!config.configured) console.log('Gateway enrolled but NVR is not configured yet. Waiting for configuration in Nimbus.')
+      if (!config.configured) console.log('Gateway enrolled but NVR is not configured yet. Waiting for configuration in DVT Solutions.')
       else { console.log(`NVR configuration received: ${config.cameras.length} channel(s), ${config.segmentSeconds}s segments.`); for (const camera of config.cameras) startCamera(camera) }
     }
     return true

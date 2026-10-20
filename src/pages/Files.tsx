@@ -5,6 +5,7 @@ import { EntryCard } from '@/components/files/EntryCard'
 import { EntryRow } from '@/components/files/EntryRow'
 import { TrashRow } from '@/components/files/TrashRow'
 import { UploadDropzone } from '@/components/files/UploadDropzone'
+import { StorageStatusBanner } from '@/components/dashboard/StorageStatusBanner'
 import { PromptDialog } from '@/components/ui/PromptDialog'
 import { Button } from '@/components/ui/Button'
 import { useFiles } from '@/hooks/useFiles'
@@ -279,6 +280,7 @@ export default function Files() {
 
       {!isFavoritesView && (
         <div className="mt-5">
+          <StorageStatusBanner />
           <UploadDropzone onItemsSelected={handleItemsSelected} />
         </div>
       )}

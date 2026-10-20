@@ -3,9 +3,9 @@ import { Card } from '@/components/ui/Card'
 import { CopyField, PasswordNote, NEXTCLOUD_SERVER_URL } from '@/components/app/NextcloudConnect'
 import { useAuth } from '@/context/AuthContext'
 
-// Nextcloud's own official client — Nimbus's storage backend is a real
+// Nextcloud's own official client — DVT Solutions' storage backend is a real
 // Nextcloud account under the hood (see backend/README.md), so the
-// official app works against it as-is. No Nimbus-specific app needed.
+// official app works against it as-is. No DVT Solutions-specific app needed.
 const IOS_APP_URL = 'https://apps.apple.com/app/nextcloud/id1125420102'
 const ANDROID_APP_URL = 'https://play.google.com/store/apps/details?id=com.nextcloud.client'
 const FDROID_APP_URL = 'https://f-droid.org/packages/com.nextcloud.client/'

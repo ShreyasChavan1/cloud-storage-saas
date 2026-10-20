@@ -15,6 +15,15 @@ export interface QuotaInfo {
   available: number | 'unlimited' | 'unknown'
 }
 
+// Whether the account may add data right now (see backend uploadGuard.service).
+// Logging in, viewing, downloading and deleting are never affected.
+export interface UploadStatus {
+  canUpload: boolean
+  reason: 'PAST_DUE' | 'OVER_QUOTA' | null
+  message: string | null
+  graceEndsAt: string | null
+}
+
 export interface StorageStats {
   totalFiles: number
   totalFolders: number
@@ -165,6 +174,8 @@ export const filesApi = {
     api.post<{ data: { entry: FileEntry } }>('/files/copy', { from, to }).then((r) => r.data.data.entry),
 
   quota: () => api.get<{ data: QuotaInfo }>('/files/quota').then((r) => r.data.data),
+
+  uploadStatus: () => api.get<{ data: UploadStatus }>('/files/upload-status').then((r) => r.data.data),
 
   stats: () => api.get<{ data: StorageStats }>('/files/stats').then((r) => r.data.data),
 }

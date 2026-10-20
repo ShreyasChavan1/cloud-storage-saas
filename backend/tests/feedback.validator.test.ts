@@ -1,23 +1,16 @@
 import { submitFeedbackSchema, listFeedbackSchema } from '../src/validators/feedback.validator'
 
-const valid = { rating: 5, description: 'Fast uploads and the CCTV backup just works.', email: 'Asha@Example.com' }
+const valid = { rating: 5, description: 'Fast uploads and the CCTV backup just works.' }
 
 describe('submitFeedbackSchema', () => {
-  it('accepts a complete submission and normalises the email', () => {
+  it('accepts a rating and a description', () => {
     const parsed = submitFeedbackSchema.parse({ body: valid })
-    expect(parsed.body.email).toBe('asha@example.com')
-    expect(parsed.body.rating).toBe(5)
+    expect(parsed.body).toEqual(valid)
   })
 
-  it('treats the email as optional (missing or blank)', () => {
-    const { email: _omit, ...rest } = valid
-    expect(submitFeedbackSchema.parse({ body: rest }).body.email).toBeUndefined()
-    expect(submitFeedbackSchema.parse({ body: { ...valid, email: '' } }).body.email).toBe('')
-    expect(submitFeedbackSchema.parse({ body: { ...valid, email: '   ' } }).body.email).toBe('')
-  })
-
-  it('rejects a malformed email', () => {
-    expect(() => submitFeedbackSchema.parse({ body: { ...valid, email: 'not-an-email' } })).toThrow()
+  it('ignores an email if one is sent — the account supplies the identity', () => {
+    const parsed = submitFeedbackSchema.parse({ body: { ...valid, email: 'someone@else.com' } })
+    expect(parsed.body).not.toHaveProperty('email')
   })
 
   it('accepts 1 to 5 stars only, as whole numbers', () => {

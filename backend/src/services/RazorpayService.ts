@@ -136,7 +136,7 @@ export const razorpayService = {
 
   /**
    * Returns the merchant's Razorpay subscription plans. The Dashboard is
-   * the source of truth for plan name, amount and billing cadence; Nimbus
+   * the source of truth for plan name, amount and billing cadence; DVT Solutions
    * only exposes plans that are active and mapped to a local entitlement.
    */
   async listPlans(): Promise<Array<{

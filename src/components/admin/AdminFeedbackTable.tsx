@@ -82,7 +82,7 @@ export function AdminFeedbackTable() {
             <input
               value={searchInput}
               onChange={(e) => setSearchInput(e.target.value)}
-              placeholder="Search feedback or email…"
+              placeholder="Search feedback, name or email…"
               aria-label="Search feedback"
               className="h-9 w-56 rounded-xl border border-line bg-surface-0 pl-9 pr-3 text-sm outline-none focus:border-brand-500 dark:border-dark-border dark:bg-dark-surface2"
             />
@@ -114,7 +114,7 @@ export function AdminFeedbackTable() {
               <tr className="border-b border-line text-xs uppercase tracking-wide text-ink-400 dark:border-dark-border">
                 <th className="py-2 pr-3 font-medium">Rating</th>
                 <th className="py-2 pr-3 font-medium">Feedback</th>
-                <th className="py-2 pr-3 font-medium">Email</th>
+                <th className="py-2 pr-3 font-medium">From</th>
                 <th className="py-2 pr-3 font-medium">Submitted</th>
                 <th className="py-2 font-medium">
                   <span className="sr-only">Actions</span>
@@ -129,12 +129,13 @@ export function AdminFeedbackTable() {
                   </td>
                   <td className="max-w-[360px] whitespace-pre-wrap break-words py-3 pr-3">{f.description}</td>
                   <td className="py-3 pr-3 text-xs">
+                    {f.userName && <div className="font-medium text-ink-900 dark:text-white">{f.userName}</div>}
                     {f.email ? (
                       <a className="text-brand-600 hover:underline dark:text-brand-400" href={`mailto:${f.email}`}>
                         {f.email}
                       </a>
                     ) : (
-                      <span className="text-ink-400">—</span>
+                      !f.userName && <span className="text-ink-400">—</span>
                     )}
                   </td>
                   <td className="whitespace-nowrap py-3 pr-3 text-xs text-ink-500 dark:text-ink-400">

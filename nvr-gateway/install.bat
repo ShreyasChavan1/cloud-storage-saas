@@ -19,7 +19,7 @@ cd /d "%~dp0"
 
 echo.
 echo ============================================
-echo   Nimbus NVR Gateway installer
+echo   DVT Solutions NVR Gateway installer
 echo ============================================
 echo.
 

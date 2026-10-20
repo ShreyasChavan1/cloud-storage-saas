@@ -15,8 +15,8 @@ async function createPlan(name: string, amount: number) {
     body: JSON.stringify({
       period: 'monthly',
       interval: 1,
-      item: { name: `Nimbus ${name} Monthly`, amount, currency, description: `${name} monthly cloud storage` },
-      notes: { product: 'Nimbus', plan: name },
+      item: { name: `DVT Solutions ${name} Monthly`, amount, currency, description: `${name} monthly cloud storage` },
+      notes: { product: 'DVT Solutions', plan: name },
     }),
   })
   if (!res.ok) throw new Error(`Failed to create ${name} plan: HTTP ${res.status} ${await res.text()}`)

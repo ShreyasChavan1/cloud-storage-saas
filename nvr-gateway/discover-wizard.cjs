@@ -2,7 +2,7 @@
 'use strict'
 
 // Runs once, interactively, during install.ps1 -- BEFORE the user is asked
-// for a Nimbus enrollment code. Its only job is answering "what IP address
+// for a DVT Solutions enrollment code. Its only job is answering "what IP address
 // is my camera/NVR at, and what's its RTSP URL", so a non-technical person
 // never has to open their NVR's dashboard or guess a URL format themselves.
 //
@@ -277,7 +277,7 @@ async function discoverOnvifDirect(candidates, username, password) {
 async function main() {
   console.log('')
   console.log('='.repeat(64))
-  console.log('  NIMBUS CAMERA / NVR DISCOVERY')
+  console.log('  DVT SOLUTIONS CAMERA / NVR DISCOVERY')
   console.log('='.repeat(64))
 
   const localIp = getLocalIPv4()
@@ -292,8 +292,8 @@ async function main() {
   console.log('This can take up to a minute.')
   console.log('')
 
-  const username = await ask('NVR / camera admin username (used only locally, not sent to Nimbus): ')
-  const password = await ask('NVR / camera admin password (used only locally, not sent to Nimbus): ')
+  const username = await ask('NVR / camera admin username (used only locally, not sent to DVT Solutions): ')
+  const password = await ask('NVR / camera admin password (used only locally, not sent to DVT Solutions): ')
   console.log('')
   console.log('Scanning...')
 
@@ -352,7 +352,7 @@ async function main() {
     return
   }
 
-  console.log('Note down the RTSP URL(s) above -- you\'ll enter them in Nimbus after this gateway enrolls.')
+  console.log('Note down the RTSP URL(s) above -- you\'ll enter them in DVT Solutions after this gateway enrolls.')
   console.log('')
   await ask('Press Enter to continue with setup...')
   process.exitCode = 0

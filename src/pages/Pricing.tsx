@@ -95,7 +95,7 @@ export default function Pricing() {
       const razorpay = new window.Razorpay({
         key: checkout.keyId,
         subscription_id: checkout.subscriptionId,
-        name: 'Nimbus',
+        name: 'DVT Solutions',
         description: `${plan.name} subscription`,
         prefill: { name: user.name, email: user.email },
         handler: async (response: Record<string, string>) => {
@@ -128,7 +128,7 @@ export default function Pricing() {
   const paidPlans = plans.map((plan) => ({
     ...plan,
     marketing: marketingByName[plan.name.toLowerCase()] ?? {
-      description: plan.description || 'A Nimbus cloud storage plan.',
+      description: plan.description || 'A DVT Solutions cloud storage plan.',
       features: [`${plan.storageLimitGb} GB storage`],
     },
   }))

@@ -21,7 +21,7 @@ export default function ResetPassword() {
     catch (err: any) { setError(err?.response?.data?.error?.message ?? 'This reset link is invalid or has expired.') }
     finally { setLoading(false) }
   }
-  return <AuthLayout title="Create a new password" subtitle="Choose a new password for your Nimbus account.">
+  return <AuthLayout title="Create a new password" subtitle="Choose a new password for your DVT Solutions account.">
     {done ? <div className="flex flex-col items-center gap-3 rounded-2xl border border-line bg-surface-50 p-6 text-center dark:border-dark-border dark:bg-dark-surface2"><CheckCircle2 className="h-10 w-10 text-success"/><p className="font-medium">Password updated</p><p className="text-sm text-ink-500">Taking you back to login...</p></div> : <form onSubmit={submit} className="flex flex-col gap-4"><Input label="New password" type="password" placeholder="At least 8 characters" icon={<Lock className="h-4 w-4"/>} value={password} onChange={e=>setPassword(e.target.value)} error={error}/><Input label="Confirm password" type="password" placeholder="Repeat your password" icon={<Lock className="h-4 w-4"/>} value={confirm} onChange={e=>setConfirm(e.target.value)}/><Button type="submit" size="lg" loading={loading} className="mt-2 w-full">Reset password</Button></form>}
     <Link to="/login" className="mt-6 flex items-center justify-center gap-1.5 text-sm font-medium text-brand-600"><ArrowLeft className="h-4 w-4"/>Back to log in</Link>
   </AuthLayout>

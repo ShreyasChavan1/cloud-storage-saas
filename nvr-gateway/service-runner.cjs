@@ -6,7 +6,7 @@ process.chdir(__dirname);
   try {
     await import('./dist/index.js');
   } catch (err) {
-    console.error('Nimbus NVR Gateway service failed to start:', err);
+    console.error('DVT Solutions NVR Gateway service failed to start:', err);
     process.exitCode = 1;
   }
 })();

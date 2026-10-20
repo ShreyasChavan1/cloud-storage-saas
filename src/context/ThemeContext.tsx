@@ -4,14 +4,15 @@ interface ThemeContextValue { theme: Theme; toggleTheme: () => void }
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined)
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
-    const stored = localStorage.getItem('nimbus-theme') as Theme | null
+    // 'nimbus-theme' is the pre-rebrand key — read it so nobody loses their saved choice.
+    const stored = (localStorage.getItem('dvt-theme') ?? localStorage.getItem('nimbus-theme')) as Theme | null
     if (stored) return stored
     return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
   })
   useEffect(() => {
     const root = document.documentElement
     if (theme === 'dark') root.classList.add('dark'); else root.classList.remove('dark')
-    localStorage.setItem('nimbus-theme', theme)
+    localStorage.setItem('dvt-theme', theme)
   }, [theme])
   const toggleTheme = () => setTheme((t) => (t === 'light' ? 'dark' : 'light'))
   return <ThemeContext.Provider value={{ theme, toggleTheme }}>{children}</ThemeContext.Provider>

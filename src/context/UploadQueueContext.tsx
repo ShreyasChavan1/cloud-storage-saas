@@ -84,7 +84,9 @@ export function uniqueName(base: string, taken: Set<string>): string {
 // person to change something first, not just retry. Anything else
 // (network blip, timeout, 5xx) is worth a genuine retry.
 function isRetryableStatus(status: number | undefined): boolean {
-  return status !== 400 && status !== 409
+  // 402 (payment overdue) and 507 (storage full) only clear once the user
+  // acts — renews, deletes files or upgrades — so retrying blindly is pointless.
+  return status !== 400 && status !== 409 && status !== 402 && status !== 507
 }
 
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -186,6 +188,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
     (path: string | undefined) => {
       queryClient.invalidateQueries({ queryKey: filesQueryKey(path) })
       queryClient.invalidateQueries({ queryKey: ['quota'] })
+      queryClient.invalidateQueries({ queryKey: ['upload-status'] })
       queryClient.invalidateQueries({ queryKey: storageStatsQueryKey })
     },
     [queryClient]
@@ -250,6 +253,8 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
           markSuccess()
         } else {
           const status = err instanceof AxiosError ? err.response?.status : undefined
+          // The account is now (or still) paused — refresh the banner/dropzone.
+          if (status === 402 || status === 507) invalidateFolder(record.targetPath)
           patchEntry(id, {
             status: 'error',
             error: getErrorMessage(err, 'Upload failed.'),

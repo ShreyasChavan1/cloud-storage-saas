@@ -19,6 +19,7 @@ import { createApp } from '../src/app'
 import { prisma } from '../src/database/prisma'
 import { hashToken } from '../src/utils/jwt'
 import { generateRandomToken } from '../src/utils/token'
+import { CURRENT_AGREEMENT_VERSION } from '../src/config/agreement'
 
 // This is a real Postgres integration suite; allow for a cold database connection.
 jest.setTimeout(30000)
@@ -45,7 +46,7 @@ const testUser = {
   phoneNumber: '+919876543210',
   password: 'TestPassword123!',
   acceptedAgreement: true,
-  agreementVersion: '1.0',
+  agreementVersion: CURRENT_AGREEMENT_VERSION,
 }
 
 beforeAll(() => {
@@ -83,7 +84,7 @@ describe('Auth flow', () => {
     })
     expect(user?.agreementAcceptances).toHaveLength(1)
     expect(user?.agreementAcceptances[0]).toMatchObject({
-      agreementVersion: '1.0',
+      agreementVersion: CURRENT_AGREEMENT_VERSION,
       email: testUser.email,
       event: 'REGISTRATION',
     })

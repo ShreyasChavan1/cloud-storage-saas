@@ -3,6 +3,7 @@ import { createReadStream } from 'fs'
 import { unlink } from 'fs/promises'
 import { posix } from 'path'
 import { userRepository } from '../repositories/user.repository'
+import { uploadGuardService } from './uploadGuard.service'
 import { cctvRepository } from '../repositories/cctv.repository'
 import { webDavService } from './WebDavService'
 import { encrypt, decrypt } from '../utils/encryption'
@@ -109,6 +110,9 @@ export const cctvService = {
       if (existing) return { duplicate: true, path: existing.path }
       const user = await userRepository.findById(device.userId)
       if (!user || !user.nextcloudUsername || !user.nextcloudWebdavPasswordEncrypted) throw ApiError.serviceUnavailable('Storage account is not provisioned')
+      // Same rule as any other upload: paused accounts (payment overdue past
+      // the grace window, or storage over the plan limit) can't add footage.
+      await uploadGuardService.assertCanUpload(user.id, size)
       const day = recordedAt ?? new Date()
       const folder = sanitizeDavPath(`/CCTV/${device.name}/${day.getUTCFullYear()}/${String(day.getUTCMonth()+1).padStart(2,'0')}/${String(day.getUTCDate()).padStart(2,'0')}`)
       const destination = sanitizeDavPath(posix.join(folder, safeName))

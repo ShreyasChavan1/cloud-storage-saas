@@ -1,4 +1,4 @@
-# Nimbus NVR Gateway installer for Windows 10/11
+# DVT Solutions NVR Gateway installer for Windows 10/11
 $ErrorActionPreference = "Stop"
 $InstallDir = Join-Path $env:ProgramData "Nimbus\NVR Gateway"
 $SpoolDir = Join-Path $env:ProgramData "Nimbus\NVR Gateway\spool"
@@ -84,11 +84,11 @@ if ((Get-Item $FfmpegPath).Length -lt 100000) { throw "FFmpeg binary looks inval
 $ffmpegCheck = Start-Process -FilePath $FfmpegPath -ArgumentList "-version" -Wait -PassThru -NoNewWindow
 if ($ffmpegCheck.ExitCode -ne 0) { throw "The installed FFmpeg binary failed its startup check." }
 
-# Defaults to the current Nimbus deployment so a customer can just press
+# Defaults to the current DVT Solutions deployment so a customer can just press
 # Enter — but stays overridable. A hardcoded, non-overridable URL here would
 # silently break every future install the moment the backend moves off this
 # host (e.g. off Railway to a permanent one), including anyone who downloads
-# this installer from Nimbus after that migration but before someone
+# this installer from DVT Solutions after that migration but before someone
 # remembers to update and re-package it.
 $DefaultApiUrl = "https://cloud-storage-saas-production.up.railway.app"
 
@@ -139,8 +139,8 @@ if ($KnowsDetails -notmatch '^(?i)y(es)?$') {
 }
 
 $ApiUrl = if ([string]::IsNullOrWhiteSpace($env:NIMBUS_INSTALL_API_URL)) { $DefaultApiUrl } else { $env:NIMBUS_INSTALL_API_URL.TrimEnd('/') }
-$Code = Read-Host "Paste the one-time Nimbus gateway enrollment code and press Enter"
-if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "Nimbus API URL and enrollment code are required." }
+$Code = Read-Host "Paste the one-time DVT Solutions gateway enrollment code and press Enter"
+if ([string]::IsNullOrWhiteSpace($ApiUrl) -or [string]::IsNullOrWhiteSpace($Code)) { throw "DVT Solutions API URL and enrollment code are required." }
 
 @"
 NIMBUS_API_URL=$ApiUrl
@@ -161,7 +161,7 @@ if (-not (Test-Path $NodePath)) { throw "Node.js was installed but node.exe coul
 # without exposing Task Scheduler or a console window.
 Push-Location $InstallDir
 node service-install.cjs install
-if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Could not install the Nimbus NVR Gateway Windows service." }
+if ($LASTEXITCODE -ne 0) { Pop-Location; throw "Could not install the DVT Solutions NVR Gateway Windows service." }
 Pop-Location
 
 # Create simple Start/Stop shortcuts in the Start Menu for non-technical users.
@@ -195,10 +195,10 @@ if ($enrolled) {
   if (Test-Path $envPath) {
     (Get-Content $envPath) | Where-Object { $_ -notmatch '^NIMBUS_ENROLLMENT_CODE=' } | Set-Content -Path $envPath -Encoding ASCII
   }
-  Write-Host "Nimbus NVR Gateway installed and enrolled successfully." -ForegroundColor Green
-  Write-Host "NVR configuration is managed from Nimbus. The gateway runs automatically in the background as a Windows service." -ForegroundColor Green
+  Write-Host "DVT Solutions NVR Gateway installed and enrolled successfully." -ForegroundColor Green
+  Write-Host "NVR configuration is managed from DVT Solutions. The gateway runs automatically in the background as a Windows service." -ForegroundColor Green
   Write-Host "Start/Stop controls were added to Start Menu > Nimbus." -ForegroundColor Green
 } else {
-  Write-Host "Nimbus NVR Gateway was installed, but enrollment was not confirmed." -ForegroundColor Yellow
-  Write-Host "Create a fresh enrollment code in Nimbus and run install.bat again." -ForegroundColor Yellow
+  Write-Host "DVT Solutions NVR Gateway was installed, but enrollment was not confirmed." -ForegroundColor Yellow
+  Write-Host "Create a fresh enrollment code in DVT Solutions and run install.bat again." -ForegroundColor Yellow
 }

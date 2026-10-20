@@ -4,7 +4,7 @@
 // Whenever the text below changes, bump AGREEMENT_VERSION here AND
 // CURRENT_AGREEMENT_VERSION in backend/src/config/agreement.ts. Registration
 // stores the version each user accepted, and the backend rejects a mismatch.
-export const AGREEMENT_VERSION = '1.1'
+export const AGREEMENT_VERSION = '1.2'
 
 // TODO before launch — the PDF still has these as [INSERT DATE].
 export const AGREEMENT_EFFECTIVE_DATE = '[INSERT DATE]'
@@ -137,7 +137,7 @@ export const agreementSections: AgreementSection[] = [
     number: 15,
     title: 'Non-Payment and Suspension',
     paragraphs: [
-      'If a renewal payment is not received by the renewal date, the subscription becomes past due. A renewal paid within the 3-day grace period continues the plan unchanged. If the amount is still unpaid after the grace period, the account is moved to the Free plan and its storage limit reduces to the Free plan capacity. This change does not delete any files. If the stored data is above the Free plan capacity, new uploads are blocked until the Customer deletes files or restores a paid plan. DVT may also suspend an account where Section 16 or Section 24 allows. Downgrade and suspension do not cancel amounts already due, and DVT does not delete Customer Data solely because of non-payment.',
+      'If a renewal payment is not received by the renewal date, the subscription becomes past due. The plan and its storage remain fully available for a 30-day grace period counted from the renewal date, and a renewal paid within that period continues the plan unchanged. If the amount is still unpaid when the grace period ends, the account is moved to the Free plan and its storage limit reduces to the Free plan capacity. If the stored data is above that capacity, new uploads, including CCTV backup uploads, are suspended until the Customer reduces storage below the Free plan capacity (deleted files may still count until the trash is emptied) or restores a paid plan. The Customer can still sign in and can view, download and delete existing files while uploads are suspended. This change does not delete any files. DVT may also suspend an account where Section 16 or Section 24 allows. Downgrade and suspension of uploads do not cancel amounts already due, and DVT does not delete Customer Data solely because of non-payment.',
     ],
   },
   {

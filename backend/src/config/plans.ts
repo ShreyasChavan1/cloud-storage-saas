@@ -21,11 +21,19 @@ export const RENEWAL_WINDOW_DAYS = 7
 
 // Phase 11B — how long a subscription stays PAST_DUE (renewalDate passed,
 // no renewal payment received) before reconciliation.service.ts gives up
-// waiting and downgrades it to Free with status EXPIRED. A grace window
-// rather than an immediate downgrade so a renewal payment made a day or
-// two late still lands on an unchanged plan.
-export const PAST_DUE_GRACE_DAYS = 3
+// waiting and downgrades it to Free with status EXPIRED. The window is
+// counted from renewalDate. Keep the Service Agreement (section 15) in step
+// with this number.
+export const PAST_DUE_GRACE_DAYS = 30
+
+// What happens to uploads while a subscription is PAST_DUE (inside the
+// grace window above):
+//   false — the paid plan and its storage stay fully available until the
+//           window ends (this is what the dashboard banner tells users);
+//   true  — uploads pause from the renewal date, files stay accessible.
+// Either way the user can still sign in, view, download and delete files.
+export const BLOCK_UPLOADS_WHEN_PAST_DUE = false
 
 // Razorpay Subscriptions require a finite total_count. 1200 monthly cycles
-// is the documented 100-year maximum, effectively indefinite for Nimbus.
+// is the documented 100-year maximum, effectively indefinite for DVT Solutions.
 export const RAZORPAY_SUBSCRIPTION_TOTAL_COUNT = 1200

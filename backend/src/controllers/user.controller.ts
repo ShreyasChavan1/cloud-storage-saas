@@ -20,6 +20,8 @@ export const userController = {
 
   deleteAccount: asyncHandler(async (req: Request, res: Response) => {
     await accountDeletionService.deleteOwnAccount(req.user!.sub, req.body.password)
+    // Current and pre-rebrand cookie names (see auth.controller.ts).
+    res.clearCookie('dvt_refresh_token', { path: '/api/auth' })
     res.clearCookie('nimbus_refresh_token', { path: '/api/auth' })
     return sendSuccess(res, { deleted: true })
   }),

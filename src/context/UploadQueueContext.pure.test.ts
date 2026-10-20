@@ -72,6 +72,10 @@ describe('isRetryableStatus', () => {
   it('treats 400 (bad request) as not retryable', () => {
     expect(isRetryableStatus(400)).toBe(false)
   })
+  it('treats 402 (payment overdue) and 507 (storage full) as not retryable', () => {
+    expect(isRetryableStatus(402)).toBe(false)
+    expect(isRetryableStatus(507)).toBe(false)
+  })
   it('treats a 5xx as retryable', () => {
     expect(isRetryableStatus(503)).toBe(true)
   })

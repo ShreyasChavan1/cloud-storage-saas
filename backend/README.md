@@ -1,6 +1,6 @@
-# Nimbus Backend — production hardening + Phase 11C autopay
+# DVT Solutions Backend — production hardening + Phase 11C autopay
 
-Express + TypeScript API backing the Nimbus frontend. Started as auth-only
+Express + TypeScript API backing the DVT Solutions frontend. Started as auth-only
 (Phase 2) and has since grown real file storage over WebDAV (Phase 6), live
 quota/stats reporting for the dashboard (Phase 9), a role-protected admin
 surface for managing accounts (Phase 10), server-side Razorpay payments for
@@ -99,7 +99,7 @@ Production password-reset emails are sent through Resend. Set these backend envi
 ```env
 CLIENT_RESET_URL=https://your-frontend.example.com/reset-password
 RESEND_API_KEY=re_...
-EMAIL_FROM=Nimbus <no-reply@your-verified-domain.example>
+EMAIL_FROM=DVT Solutions <no-reply@your-verified-domain.example>
 ```
 
 The sender domain/address must be verified in Resend. In development/test, leaving the Resend variables empty keeps the safe `devToken` fallback for local testing. Production startup rejects a missing Resend key, sender, or a localhost reset URL. The public forgot-password endpoint always returns the same generic response so mail delivery cannot be used to enumerate accounts.
@@ -581,19 +581,19 @@ The backend exposes:
 - `POST /api/payments/create-subscription`
 - `POST /api/payments/verify-subscription`
 
-`GET /api/payments/plans` reads the Razorpay Plans API and uses Razorpay as the source of truth for the paid catalog's provider name, amount and billing cadence. Only active monthly plans whose IDs are explicitly configured as Nimbus's Basic/Pro subscription plans are exposed, because a Razorpay plan still needs a corresponding Nimbus entitlement row to determine storage quota and maintain local foreign-key relationships. Configure `RAZORPAY_PLAN_BASIC_ID` and `RAZORPAY_PLAN_PRO_ID` with the provider Plan IDs. The helper `npm run razorpay:create-plans` creates the two example plans (₹9.99 and ₹24.99) and prints their IDs. Razorpay Plans themselves are immutable, so create a new provider Plan when pricing changes and update the corresponding Nimbus configuration.
+`GET /api/payments/plans` reads the Razorpay Plans API and uses Razorpay as the source of truth for the paid catalog's provider name, amount and billing cadence. Only active monthly plans whose IDs are explicitly configured as DVT Solutions' Basic/Pro subscription plans are exposed, because a Razorpay plan still needs a corresponding DVT Solutions entitlement row to determine storage quota and maintain local foreign-key relationships. Configure `RAZORPAY_PLAN_BASIC_ID` and `RAZORPAY_PLAN_PRO_ID` with the provider Plan IDs. The helper `npm run razorpay:create-plans` creates the two example plans (₹9.99 and ₹24.99) and prints their IDs. Razorpay Plans themselves are immutable, so create a new provider Plan when pricing changes and update the corresponding DVT Solutions configuration.
 
-The local `BillingSubscription` table stores the provider mandate separately from Nimbus's current `Subscription` entitlement. This allows a new mandate to be authorised during a plan change without overwriting the current entitlement prematurely. Recurring payments are appended to the normal `Payment` ledger.
+The local `BillingSubscription` table stores the provider mandate separately from DVT Solutions' current `Subscription` entitlement. This allows a new mandate to be authorised during a plan change without overwriting the current entitlement prematurely. Recurring payments are appended to the normal `Payment` ledger.
 
-Webhook handling covers `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, and `subscription.expired`. `subscription.charged` is the authoritative recurring-payment event: it records the payment, updates the local billing period, keeps the Nimbus plan active, and retries Nextcloud quota reconciliation through the existing mechanism.
+Webhook handling covers `subscription.authenticated`, `subscription.activated`, `subscription.charged`, `subscription.pending`, `subscription.halted`, `subscription.cancelled`, `subscription.completed`, and `subscription.expired`. `subscription.charged` is the authoritative recurring-payment event: it records the payment, updates the local billing period, keeps the DVT Solutions plan active, and retries Nextcloud quota reconciliation through the existing mechanism.
 
 The existing `create-order`/`verify-payment` endpoints remain available for compatibility with the previous one-time payment flow. New paid-plan UI should use the Subscription endpoints instead.
 
 ### Password reset Nextcloud username mapping
 
-Password reset and authenticated password changes synchronize the Nextcloud password using the user's stored `nextcloudUsername` (falling back to the Nimbus user ID), never the email address. This matches the provisioning flow, which uses the Nimbus UUID as the Nextcloud username.
+Password reset and authenticated password changes synchronize the Nextcloud password using the user's stored `nextcloudUsername` (falling back to the DVT Solutions user ID), never the email address. This matches the provisioning flow, which uses the DVT Solutions UUID as the Nextcloud username.
 
 
 ### WebDAV credential repair
 
-Authenticated users can call `POST /api/users/me/webdav/repair` with their current password to rotate the dedicated Nextcloud WebDAV app password without changing the Nimbus/Nextcloud login password. This is used to recover accounts whose stored WebDAV credential became stale after an external password change or an older deployment.
+Authenticated users can call `POST /api/users/me/webdav/repair` with their current password to rotate the dedicated Nextcloud WebDAV app password without changing the DVT Solutions/Nextcloud login password. This is used to recover accounts whose stored WebDAV credential became stale after an external password change or an older deployment.

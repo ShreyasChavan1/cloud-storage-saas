@@ -229,7 +229,7 @@ describe('access-token validation', () => {
 
 describe('CSRF guard on cookie-authenticated endpoints', () => {
   it.each(['/api/auth/refresh-token', '/api/auth/logout'])('%s rejects a foreign Origin', async (url) => {
-    const res = await request(app).post(url).set('Origin', 'https://evil.example').set('Cookie', 'nimbus_refresh_token=x')
+    const res = await request(app).post(url).set('Origin', 'https://evil.example').set('Cookie', 'dvt_refresh_token=x')
     expect(res.status).toBe(403)
   })
 })

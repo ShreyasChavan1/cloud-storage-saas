@@ -164,7 +164,7 @@ beforeEach(() => {
 })
 
 describe('paymentService.listPlans', () => {
-  it('uses the configured Razorpay plans as the paid catalog and maps them to Nimbus entitlements', async () => {
+  it('uses the configured Razorpay plans as the paid catalog and maps them to DVT Solutions entitlements', async () => {
     mockFindAllPlans.mockResolvedValue([
       planRow({ id: 'plan-basic', name: 'Basic', storageLimit: 100, price: { toString: () => '9.99' } as any }),
       planRow({ id: 'plan-pro', name: 'Pro', storageLimit: 500, price: { toString: () => '24.99' } as any }),

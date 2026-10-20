@@ -18,6 +18,9 @@ import {
 } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback/FeedbackForm";
 import { useSupportContact } from "@/hooks/useSupportContact";
+import { FeedbackSignInCard } from "@/components/feedback/FeedbackSignInCard";
+import { useFeaturedFeedback } from "@/hooks/useFeaturedFeedback";
+import { useAuth } from "@/context/AuthContext";
 
 const reviews = [
   {
@@ -52,16 +55,38 @@ const reviews = [
   },
 ];
 
-const ReviewStars = () => (
-  <div className="flex gap-0.5" aria-label="5 out of 5 stars">
+const ReviewStars = ({ rating = 5 }: { rating?: number }) => (
+  <div className="flex gap-0.5" aria-label={`${rating} out of 5 stars`}>
     {[0, 1, 2, 3, 4].map((i) => (
-      <Star key={i} className="h-4 w-4 fill-[#E8792B] text-[#E8792B]" />
+      <Star
+        key={i}
+        className={`h-4 w-4 ${i < rating ? "fill-[#E8792B] text-[#E8792B]" : "text-[#CFC7B8]"}`}
+      />
     ))}
   </div>
 );
 
+// The home page always shows this many reviews.
+const REVIEW_SLOTS = 6;
+
 const Home = () => {
   const { contact } = useSupportContact();
+  const { isAuthenticated, loading: authLoading } = useAuth();
+  const { data: featuredFeedback } = useFeaturedFeedback();
+
+  // Real reviews (latest first, rated 4-5 stars) take the slots one by one;
+  // whatever is left over is filled with the sample reviews above, so the
+  // section always shows REVIEW_SLOTS cards.
+  const shownReviews = [
+    ...(featuredFeedback ?? []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      role: "DVT Solutions customer",
+      text: f.text,
+      rating: f.rating,
+    })),
+    ...reviews.map((r) => ({ id: `sample-${r.name}`, ...r, rating: 5 })),
+  ].slice(0, REVIEW_SLOTS);
   return (
     <div className="min-h-screen overflow-hidden bg-[#F8F5EF] text-[#17233A]">
       {/* Navigation */}
@@ -987,12 +1012,12 @@ const Home = () => {
             </div>
 
             <div className="mt-14 grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {reviews.map((review) => (
+              {shownReviews.map((review) => (
                 <figure
-                  key={review.name}
+                  key={review.id}
                   className="flex flex-col rounded-xl border border-[#D8D0C1] bg-white p-7"
                 >
-                  <ReviewStars />
+                  <ReviewStars rating={review.rating} />
 
                   <blockquote className="mt-4 flex-1 text-sm leading-6 !text-[#444B55]">
                     “{review.text}”
@@ -1042,7 +1067,13 @@ const Home = () => {
               </p>
             </div>
 
-            <FeedbackForm />
+            {authLoading ? (
+              <div className="min-h-[24rem]" aria-hidden="true" />
+            ) : isAuthenticated ? (
+              <FeedbackForm />
+            ) : (
+              <FeedbackSignInCard />
+            )}
           </div>
         </section>
 
@@ -1161,6 +1192,25 @@ const Home = () => {
                 >
                   Service Agreement
                 </Link>
+
+                <a
+                  href="/legal/DVT_Master_Service_Agreement_English.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  Master Agreement (English, PDF)
+                </a>
+
+                <a
+                  href="/legal/DVT_Master_Service_Agreement_Marathi.pdf"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  lang="mr"
+                  className="block transition hover:text-[#F29A58]"
+                >
+                  मास्टर करार (मराठी, PDF)
+                </a>
               </div>
             </div>
 

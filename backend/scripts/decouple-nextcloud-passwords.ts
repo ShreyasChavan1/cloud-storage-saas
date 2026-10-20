@@ -1,5 +1,5 @@
 /**
- * One-off migration: stop Nextcloud accounts from sharing the user's Nimbus
+ * One-off migration: stop Nextcloud accounts from sharing the user's DVT Solutions
  * password.
  *
  * Before this change, registration passed the user's real password to

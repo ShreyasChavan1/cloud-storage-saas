@@ -1,4 +1,4 @@
-# Nimbus email verification update
+# DVT Solutions email verification update
 
 This update adds mandatory email verification for self-registration, keeps the requested phone number field, exposes phone/email verification status to admins, and removes the admin password-reset action/API.
 
@@ -22,4 +22,4 @@ Existing users are marked as already verified by the migration so the new requir
 
 ## Registration behavior
 
-New self-registered accounts receive a verification email and cannot log in until the link is used. Verification automatically creates a normal Nimbus session and redirects the user to the dashboard.
+New self-registered accounts receive a verification email and cannot log in until the link is used. Verification automatically creates a normal DVT Solutions session and redirects the user to the dashboard.

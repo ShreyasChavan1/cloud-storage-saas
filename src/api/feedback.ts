@@ -1,10 +1,18 @@
 import { api } from '@/lib/api'
 
-// What the public form sends. `email` is left out entirely when blank.
+// What the form sends. The signed-in account supplies the identity, so there
+// is no name or email field.
 export interface FeedbackSubmission {
   rating: number
   description: string
-  email?: string
+}
+
+// A review shown on the public home page (first name + last initial only).
+export interface FeaturedFeedback {
+  id: string
+  rating: number
+  text: string
+  name: string
 }
 
 export interface FeedbackEntry {
@@ -12,6 +20,7 @@ export interface FeedbackEntry {
   rating: number
   description: string
   email: string | null
+  userName: string | null
   createdAt: string
 }
 
@@ -33,9 +42,13 @@ export interface ListFeedbackParams {
 }
 
 export const feedbackApi = {
-  // Public — no login needed.
+  // Signed-in users only (the backend rejects anonymous requests).
   submit: (input: FeedbackSubmission) =>
     api.post<{ data: { id: string } }>('/feedback', input).then((r) => r.data.data),
+
+  // Public: the latest well-rated reviews for the home page.
+  featured: () =>
+    api.get<{ data: { reviews: FeaturedFeedback[] } }>('/feedback/featured').then((r) => r.data.data.reviews),
 
   // Admin only (the backend's requireAdmin is the real gate).
   adminList: (params: ListFeedbackParams) =>

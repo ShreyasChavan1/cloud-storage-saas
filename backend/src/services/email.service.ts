@@ -27,9 +27,9 @@ export async function sendPasswordResetEmail(to: string, resetUrl: string): Prom
       body: JSON.stringify({
         from: env.EMAIL_FROM,
         to: [to],
-        subject: 'Reset your Nimbus password',
-        text: `We received a request to reset your Nimbus password.\n\nReset your password: ${resetUrl}\n\nThis link expires in ${env.PASSWORD_RESET_TOKEN_EXPIRES_IN}. If you did not request this, you can ignore this email.`,
-        html: `<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111827\"><h2>Reset your Nimbus password</h2><p>We received a request to reset your Nimbus password.</p><p><a href=\"${safeUrl}\">Reset your password</a></p><p>This link expires in ${escapeHtml(env.PASSWORD_RESET_TOKEN_EXPIRES_IN)}.</p><p>If you did not request this, you can ignore this email.</p></div>`,
+        subject: 'Reset your DVT Solutions password',
+        text: `We received a request to reset your DVT Solutions password.\n\nReset your password: ${resetUrl}\n\nThis link expires in ${env.PASSWORD_RESET_TOKEN_EXPIRES_IN}. If you did not request this, you can ignore this email.`,
+        html: `<div style=\"font-family:Arial,sans-serif;line-height:1.6;color:#111827\"><h2>Reset your DVT Solutions password</h2><p>We received a request to reset your DVT Solutions password.</p><p><a href=\"${safeUrl}\">Reset your password</a></p><p>This link expires in ${escapeHtml(env.PASSWORD_RESET_TOKEN_EXPIRES_IN)}.</p><p>If you did not request this, you can ignore this email.</p></div>`,
       }),
       signal: controller.signal,
     })
@@ -57,9 +57,9 @@ export async function sendEmailVerificationEmail(to: string, verificationUrl: st
       body: JSON.stringify({
         from: env.EMAIL_FROM,
         to: [to],
-        subject: 'Verify your Nimbus email address',
-        text: `Welcome to Nimbus. Verify your email address: ${verificationUrl}\n\nThis link expires in ${env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN}. If you did not create this account, you can ignore this email.`,
-        html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>Verify your Nimbus email</h2><p>Thanks for creating a Nimbus account. Click below to verify your email address.</p><p><a href="${safeUrl}">Verify email address</a></p><p>This link expires in ${escapeHtml(env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN)}.</p><p>If you did not create this account, you can ignore this email.</p></div>`,
+        subject: 'Verify your DVT Solutions email address',
+        text: `Welcome to DVT Solutions. Verify your email address: ${verificationUrl}\n\nThis link expires in ${env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN}. If you did not create this account, you can ignore this email.`,
+        html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>Verify your DVT Solutions email</h2><p>Thanks for creating a DVT Solutions account. Click below to verify your email address.</p><p><a href="${safeUrl}">Verify email address</a></p><p>This link expires in ${escapeHtml(env.EMAIL_VERIFICATION_TOKEN_EXPIRES_IN)}.</p><p>If you did not create this account, you can ignore this email.</p></div>`,
       }),
       signal: controller.signal,
     })
@@ -103,7 +103,7 @@ export async function sendSupportRequestEmail(params: {
         from: env.EMAIL_FROM,
         to: [params.toEmail],
         reply_to: params.fromEmail,
-        subject: `[Nimbus Support] ${params.subject}`,
+        subject: `[DVT Solutions Support] ${params.subject}`,
         text: `From: ${params.fromName} <${params.fromEmail}>\n\n${params.message}`,
         html: `<div style="font-family:Arial,sans-serif;line-height:1.6;color:#111827"><h2>New support message</h2><p><strong>From:</strong> ${safeName} &lt;${escapeHtml(params.fromEmail)}&gt;</p><p><strong>Subject:</strong> ${safeSubject}</p><hr style="border:none;border-top:1px solid #e5e7eb" /><p>${safeMessageHtml}</p></div>`,
       }),

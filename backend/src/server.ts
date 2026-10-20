@@ -1,6 +1,7 @@
 import { createApp } from './app'
 import { env } from './config/env'
 import { logger } from './config/logger'
+import { reconciliationService } from './services/reconciliation.service'
 import { connectDatabase, disconnectDatabase } from './database/prisma'
 import { runAuthCleanup } from './services/authCleanup.service'
 
@@ -10,7 +11,7 @@ async function bootstrap() {
   const app = createApp()
 
   const server = app.listen(env.PORT, () => {
-    logger.info(`🚀 Nimbus API listening on http://localhost:${env.PORT} [${env.NODE_ENV}]`)
+    logger.info(`🚀 DVT Solutions API listening on http://localhost:${env.PORT} [${env.NODE_ENV}]`)
   })
 
   // Node's HTTP server defaults to requestTimeout = 300s: the ENTIRE request
@@ -29,6 +30,25 @@ async function bootstrap() {
   void runAuthCleanup()
   const cleanupTimer = setInterval(() => void runAuthCleanup(), 60 * 60 * 1000)
   cleanupTimer.unref()
+
+  // Billing sweep: marks overdue subscriptions PAST_DUE and, once the grace
+  // window (PAST_DUE_GRACE_DAYS) has run out, moves them to the Free plan.
+  // Nothing else calls reconciliationService on a schedule, so without this
+  // an unpaid account would stay on its paid plan indefinitely. Runs shortly
+  // after start and then every RECONCILE_INTERVAL_HOURS (default 6; set 0 to
+  // turn it off if an external scheduler already calls
+  // POST /admin/reconcile-subscriptions). Safe to run more than once — every
+  // step is idempotent.
+  const reconcileHours = Number(process.env.RECONCILE_INTERVAL_HOURS ?? 6)
+  if (Number.isFinite(reconcileHours) && reconcileHours > 0) {
+    const runReconcile = () =>
+      reconciliationService
+        .run()
+        .then((summary) => logger.info({ summary }, 'Subscription reconciliation finished'))
+        .catch((err) => logger.error({ err }, 'Subscription reconciliation failed'))
+    setTimeout(() => void runReconcile(), 60_000).unref()
+    setInterval(() => void runReconcile(), reconcileHours * 60 * 60 * 1000).unref()
+  }
 
   const shutdown = async (signal: string) => {
     logger.info(`${signal} received — shutting down gracefully`)

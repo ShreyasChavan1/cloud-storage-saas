@@ -1,4 +1,4 @@
-# Nimbus — Cloud Storage UI (through Phase 10)
+# DVT Solutions — Cloud Storage UI (through Phase 10)
 
 Frontend for a Dropbox/Google Drive-style cloud storage app, backed by a
 real Express API and real Nextcloud accounts over WebDAV — not dummy data.
@@ -125,7 +125,7 @@ See `src/components/admin/AdminUsersTable.test.tsx` for coverage.
   The paid catalog is read from Razorpay through `GET /api/payments/plans`;
   displayed paid-plan names, prices and billing cadence therefore come from
   the provider rather than duplicated frontend constants. The backend maps
-  the configured Razorpay Basic/Pro plan IDs to Nimbus entitlement records
+  the configured Razorpay Basic/Pro plan IDs to DVT Solutions entitlement records
   for storage/quota handling. Settings can schedule cancellation at the end
   of the current billing period.
 - **Self-service password reset** — `forgot-password` issues a token but
@@ -138,7 +138,7 @@ See `src/components/admin/AdminUsersTable.test.tsx` for coverage.
 
 ## Favorites
 
-Favorites are persisted in Nimbus PostgreSQL per user. The UI supports starring/unstarring files and folders, a working Favorites view, and keeps favorite paths in sync when an item is renamed, moved, or deleted. Apply the included Prisma migration before starting the backend:
+Favorites are persisted in DVT Solutions PostgreSQL per user. The UI supports starring/unstarring files and folders, a working Favorites view, and keeps favorite paths in sync when an item is renamed, moved, or deleted. Apply the included Prisma migration before starting the backend:
 
 ```bash
 cd backend
@@ -148,8 +148,8 @@ npx prisma generate
 
 ## CCTV / NVR backup
 
-Nimbus includes a production NVR gateway under `nvr-gateway/`. The customer installs it on a machine on the same LAN as the NVR. **Docker is not required.** Windows uses `install.ps1` and registers a startup task; Linux uses `install.sh` and registers a systemd service. The installer automatically installs Node.js and FFmpeg if needed.
+DVT Solutions includes a production NVR gateway under `nvr-gateway/`. The customer installs it on a machine on the same LAN as the NVR. **Docker is not required.** Windows uses `install.ps1` and registers a startup task; Linux uses `install.sh` and registers a systemd service. The installer automatically installs Node.js and FFmpeg if needed.
 
-The customer creates a gateway in **Settings → CCTV**, receives a one-time enrollment code, and enters only that code during gateway installation. NVR credentials, channels, RTSP URLs, and recording intervals are configured from Nimbus and delivered securely to the enrolled gateway over HTTPS.
+The customer creates a gateway in **Settings → CCTV**, receives a one-time enrollment code, and enters only that code during gateway installation. NVR credentials, channels, RTSP URLs, and recording intervals are configured from DVT Solutions and delivered securely to the enrolled gateway over HTTPS.
 
-The gateway pulls NVR channels over RTSP with FFmpeg, cuts configurable MP4 intervals, queues footage locally during outages, retries uploads, and uploads completed footage over HTTPS to the user's Nextcloud-backed Nimbus storage. The gateway exposes no public listening port.
+The gateway pulls NVR channels over RTSP with FFmpeg, cuts configurable MP4 intervals, queues footage locally during outages, retries uploads, and uploads completed footage over HTTPS to the user's Nextcloud-backed DVT Solutions storage. The gateway exposes no public listening port.

@@ -3,7 +3,7 @@ import { Copy } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 // Shared by the Mobile App and Desktop App pages so the server address and
-// the sign-in password wording are defined once. Nimbus's storage backend is
+// the sign-in password wording are defined once. DVT Solutions' storage backend is
 // a real Nextcloud account under the hood, so the official Nextcloud clients
 // connect to it as-is.
 export const NEXTCLOUD_SERVER_URL = 'https://cloud.dv-technologies.in'

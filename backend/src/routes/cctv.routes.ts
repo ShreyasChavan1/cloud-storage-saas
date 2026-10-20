@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/auth.middleware'
 import { ApiError } from '../utils/ApiError'
 
 const router = Router()
-const spool = join(tmpdir(), 'nimbus-cctv')
+const spool = join(tmpdir(), 'dvt-cctv')
 mkdirSync(spool, { recursive: true })
 const upload = multer({ storage: multer.diskStorage({ destination: spool, filename: (_req, file, cb) => cb(null, `${randomUUID()}-${file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_')}`) }), limits: { fileSize: 1024 * 1024 * 1024 } })
 

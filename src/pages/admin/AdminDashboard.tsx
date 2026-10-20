@@ -24,7 +24,7 @@ export default function AdminDashboard() {
     <div className="mx-auto max-w-7xl animate-fade-up">
       <div className="flex flex-col gap-1">
         <h1 className="text-2xl font-bold sm:text-3xl">Admin</h1>
-        <p className="text-ink-500 dark:text-ink-400">Manage accounts, quotas, and access across Nimbus.</p>
+        <p className="text-ink-500 dark:text-ink-400">Manage accounts, quotas, and access across DVT Solutions.</p>
       </div>
 
       <div className="mt-6 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">

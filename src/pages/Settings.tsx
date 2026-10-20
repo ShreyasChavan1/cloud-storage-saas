@@ -142,7 +142,7 @@ export default function Settings({ only }: { only?: 'cctv' } = {}) {
           {active === 'security' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">Security</h2>
-              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Update your Nimbus password. Your storage account password is updated at the same time.</p>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Update your DVT Solutions password. Your storage account password is updated at the same time.</p>
               <div className="mt-5 flex flex-col gap-4 max-w-sm">
                 <Input label="Current password" type="password" placeholder="••••••••" value={passwords.current} onChange={e => setPasswords(p => ({ ...p, current: e.target.value }))} />
                 <Input label="New password" type="password" placeholder="At least 8 characters" value={passwords.next} onChange={e => setPasswords(p => ({ ...p, next: e.target.value }))} />
@@ -156,7 +156,7 @@ export default function Settings({ only }: { only?: 'cctv' } = {}) {
 
               <div className="mt-7 rounded-xl border border-line p-4 dark:border-dark-border">
                 <p className="font-medium text-ink-900 dark:text-white">Storage connection</p>
-                <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">If your password changed outside Nimbus and your files stop loading, refresh the dedicated Nextcloud WebDAV credential without changing your login password.</p>
+                <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">If your password changed outside DVT Solutions and your files stop loading, refresh the dedicated Nextcloud WebDAV credential without changing your login password.</p>
                 <Button variant="secondary" size="sm" className="mt-3" loading={passwordSaving} disabled={!passwords.current} onClick={async () => {
                   setPasswordSaving(true); try { await userApi.repairWebdav(passwords.current); showToast('Storage connection repaired.'); setPasswords(p => ({ ...p, current: '' })) } catch (err) { showToast(getErrorMessage(err, 'Could not repair the storage connection.'), 'error') } finally { setPasswordSaving(false) }
                 }}>Repair storage connection</Button>
@@ -230,17 +230,17 @@ export default function Settings({ only }: { only?: 'cctv' } = {}) {
           {active === 'cctv' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">CCTV / NVR cloud backup</h2>
-              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Connect an NVR on your local network. Nimbus stores completed camera recordings in your cloud storage automatically. The gateway makes the outbound connection, so your camera or NVR does not need to be exposed to the internet.</p>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Connect an NVR on your local network. DVT Solutions stores completed camera recordings in your cloud storage automatically. The gateway makes the outbound connection, so your camera or NVR does not need to be exposed to the internet.</p>
 
               <div className="mt-5 rounded-xl border border-line bg-surface-50 p-4 dark:border-dark-border dark:bg-dark-surface2">
                 <div className="flex items-start gap-3">
                   <div className="rounded-lg bg-brand-50 p-2 text-brand-600 dark:bg-brand-900/30 dark:text-brand-300"><Monitor className="h-5 w-5" /></div>
                   <div className="min-w-0 flex-1">
-                    <p className="font-semibold">Install the Nimbus NVR Gateway</p>
+                    <p className="font-semibold">Install the DVT Solutions NVR Gateway</p>
                     <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Install it on a Windows PC or Linux server that can reach your NVR on the local network. Docker is not required.</p>
                     <div className="mt-4 flex flex-wrap gap-2">
-                      <a href="/nvr-gateway/nimbus-nvr-gateway-windows.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent-500 px-3 text-sm font-medium text-white hover:bg-accent-600"><Download className="h-4 w-4" />Windows installer</a>
-                      <a href="/nvr-gateway/nimbus-nvr-gateway-linux.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface-0 px-3 text-sm font-medium text-ink-900 hover:bg-surface-50 dark:border-dark-border dark:bg-dark-surface dark:text-white"><Download className="h-4 w-4" />Linux installer</a>
+                      <a href="/nvr-gateway/dvt-nvr-gateway-windows.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg bg-accent-500 px-3 text-sm font-medium text-white hover:bg-accent-600"><Download className="h-4 w-4" />Windows installer</a>
+                      <a href="/nvr-gateway/dvt-nvr-gateway-linux.zip" download className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-surface-0 px-3 text-sm font-medium text-ink-900 hover:bg-surface-50 dark:border-dark-border dark:bg-dark-surface dark:text-white"><Download className="h-4 w-4" />Linux installer</a>
                     </div>
                   </div>
                 </div>
@@ -269,7 +269,7 @@ No PowerShell or terminal commands are required.</p></div>
                       <p className="font-mono text-lg tracking-wider">{newCctvEnrollment.code}</p>
                       <Button size="sm" variant="secondary" onClick={async () => { await navigator.clipboard?.writeText(newCctvEnrollment.code); setCopiedEnrollment(true); window.setTimeout(() => setCopiedEnrollment(false), 1800) }}><Copy className="h-3.5 w-3.5" />{copiedEnrollment ? 'Copied' : 'Copy code'}</Button>
                     </div>
-                    <p className="mt-2 text-xs text-ink-500">Expires in 24 hours and can only be used once. Install the gateway on a machine that can reach this NVR, then enter the code in the installer. The permanent gateway token is stored locally by the gateway and is never shown in Nimbus.</p>
+                    <p className="mt-2 text-xs text-ink-500">Expires in 24 hours and can only be used once. Install the gateway on a machine that can reach this NVR, then enter the code in the installer. The permanent gateway token is stored locally by the gateway and is never shown in DVT Solutions.</p>
                   </div>
                 )}
               </div>
@@ -313,7 +313,7 @@ No PowerShell or terminal commands are required.</p></div>
           {active === 'notifications' && (
             <Card className="p-6">
               <h2 className="text-lg font-semibold">Notifications</h2>
-              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Choose which account notifications Nimbus may send you.</p>
+              <p className="mt-1 text-sm text-ink-500 dark:text-ink-400">Choose which account notifications DVT Solutions may send you.</p>
               <div className="mt-5 flex flex-col divide-y divide-line dark:divide-dark-border">
                 {([['fileShared','File shared with me'], ['comments','Comments on my files'], ['storageAlmostFull','Storage almost full'], ['productUpdates','Product updates']] as const).map(([key,label]) => (
                   <label key={key} className="flex items-center justify-between py-3 cursor-pointer">

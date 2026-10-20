@@ -2,7 +2,7 @@ import { api } from '@/lib/api'
 
 export interface BillingPlan {
   id: string // Razorpay plan id, used as the billing catalog identity
-  localPlanId: string // Nimbus Plan id, used for entitlement/FK operations
+  localPlanId: string // DVT Solutions Plan id, used for entitlement/FK operations
   localPlanName: string
   name: string
   description: string

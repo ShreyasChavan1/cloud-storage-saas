@@ -19,7 +19,7 @@ export default function VerifyEmail() {
   useEffect(() => {
     if (!token) {
       setStatus('waiting')
-      setMessage('Check your inbox for the verification email sent by Nimbus.')
+      setMessage('Check your inbox for the verification email sent by DVT Solutions.')
       return
     }
 
@@ -54,7 +54,7 @@ export default function VerifyEmail() {
   }
 
   return (
-    <AuthLayout title="Verify your email" subtitle="One quick step before you start using Nimbus.">
+    <AuthLayout title="Verify your email" subtitle="One quick step before you start using DVT Solutions.">
       <div className="flex flex-col items-center text-center">
         {status === 'success' ? (
           <CheckCircle2 className="h-12 w-12 text-success" />

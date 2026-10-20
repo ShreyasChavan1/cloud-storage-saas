@@ -1,4 +1,4 @@
-// Prisma schema — Nimbus backend (through Phase 11C: autopay, account features & production hardening)
+// Prisma schema — DVT Solutions backend (through Phase 11C: autopay, account features & production hardening)
 // Run `npm run prisma:migrate` after setting DATABASE_URL in .env,
 // then `npm run prisma:seed` to load the default plans (and, if
 // ADMIN_SEED_EMAIL/ADMIN_SEED_PASSWORD are set, a bootstrap admin — see
@@ -166,6 +166,7 @@ model User {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   subscriptions       Subscription[]
+  feedback            Feedback[]
   billingSubscriptions BillingSubscription[]
   payments            Payment[]
   favorites            Favorite[]
@@ -540,10 +541,20 @@ model Feedback {
   id String @id @default(uuid())
   rating Int
   description String @db.Text
+  // Legacy: only filled on rows from the earlier public form. New feedback
+  // always has a user, and the admin list shows that account's email.
   email String?
   createdAt DateTime @default(now()) @map("created_at")
 
+  // New feedback can only be submitted by a signed-in user. Rows without one
+  // (from before that rule) are kept for the admin but never shown publicly.
+  // Cascade: deleting an account removes its feedback, including from the
+  // home page.
+  userId String? @map("user_id")
+  user User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
   @@index([createdAt])
   @@index([rating])
+  @@index([userId])
   @@map("feedback")
 }

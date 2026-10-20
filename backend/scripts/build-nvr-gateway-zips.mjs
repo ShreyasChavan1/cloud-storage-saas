@@ -1,4 +1,4 @@
-// Regenerates public/nvr-gateway/nimbus-nvr-gateway-{windows,linux}.zip from
+// Regenerates public/nvr-gateway/dvt-nvr-gateway-{windows,linux}.zip from
 // the nvr-gateway/ source folder. Runs automatically before every build (see
 // the "prebuild" script in package.json) so the zips served by the
 // Settings > CCTV download buttons can never drift out of sync with the
@@ -23,8 +23,8 @@ const outDir = join(repoRoot, 'public', 'nvr-gateway')
 const SHARED_FILES = ['README.md', '.gitignore', 'package.json', '.env.example', 'tsconfig.json']
 
 const TARGETS = [
-  { name: 'nimbus-nvr-gateway-windows.zip', extra: ['install.ps1', 'uninstall.ps1', 'install.bat', 'discover-wizard.cjs', 'service-install.cjs', 'service-runner.cjs', 'start-gateway.bat', 'stop-gateway.bat'] },
-  { name: 'nimbus-nvr-gateway-linux.zip', extra: ['install.sh', 'uninstall.sh'] },
+  { name: 'dvt-nvr-gateway-windows.zip', extra: ['install.ps1', 'uninstall.ps1', 'install.bat', 'discover-wizard.cjs', 'service-install.cjs', 'service-runner.cjs', 'start-gateway.bat', 'stop-gateway.bat'] },
+  { name: 'dvt-nvr-gateway-linux.zip', extra: ['install.sh', 'uninstall.sh'] },
 ]
 
 function buildZip({ name, extra }) {
@@ -38,7 +38,7 @@ function buildZip({ name, extra }) {
     archive.on('error', reject)
     archive.pipe(output)
 
-    const base = 'nimbus-nvr-gateway/'
+    const base = 'dvt-nvr-gateway/'
     for (const file of [...SHARED_FILES, ...extra]) {
       const filePath = join(gatewaySrc, file)
       // install.bat only exists for the Windows target — skip quietly for

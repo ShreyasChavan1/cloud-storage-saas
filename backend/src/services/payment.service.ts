@@ -164,7 +164,7 @@ export const paymentService = {
   },
 
   async listPlans() {
-    // Razorpay is the billing catalog source of truth. Nimbus still needs a
+    // Razorpay is the billing catalog source of truth. DVT Solutions still needs a
     // local Plan row for storage/quota entitlement and FK relationships, so
     // only Razorpay plans that map to one of our local paid plans are exposed.
     const [razorpayPlans, localPlans] = await Promise.all([

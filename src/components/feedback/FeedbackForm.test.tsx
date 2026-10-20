@@ -25,7 +25,7 @@ describe('FeedbackForm', () => {
     expect(mockSubmit).not.toHaveBeenCalled()
   })
 
-  it('sends the rating and description and leaves the blank email out', async () => {
+  it('sends the rating and the trimmed description', async () => {
     render(<FeedbackForm />)
     fireEvent.click(screen.getByLabelText('4 stars'))
     write('  Great service  ')
@@ -35,24 +35,19 @@ describe('FeedbackForm', () => {
     expect(await screen.findByText('Thank you for your feedback!')).toBeTruthy()
   })
 
-  it('includes the email when one is given', async () => {
+  it('never sends an email — the signed-in account supplies it', async () => {
     render(<FeedbackForm />)
+    expect(screen.queryByLabelText(/email/i)).toBeNull()
     fireEvent.click(screen.getByLabelText('5 stars'))
     write('Loved it')
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'asha@example.com' } })
     submit()
     await waitFor(() => expect(mockSubmit).toHaveBeenCalled())
-    expect(mockSubmit).toHaveBeenCalledWith({ rating: 5, description: 'Loved it', email: 'asha@example.com' })
+    expect(mockSubmit).toHaveBeenCalledWith({ rating: 5, description: 'Loved it' })
   })
 
-  it('blocks a malformed email', () => {
+  it('tells the user that 4-5 star reviews may be shown publicly', () => {
     render(<FeedbackForm />)
-    fireEvent.click(screen.getByLabelText('3 stars'))
-    write('Fine')
-    fireEvent.change(screen.getByLabelText(/email/i), { target: { value: 'nope' } })
-    submit()
-    expect(screen.getByText(/valid email address/i)).toBeTruthy()
-    expect(mockSubmit).not.toHaveBeenCalled()
+    expect(screen.getByText(/may be shown on this page/i)).toBeTruthy()
   })
 
   it('shows an error and keeps what was typed when sending fails', async () => {

@@ -5,4 +5,4 @@ systemctl disable --now nimbus-nvr-gateway.service 2>/dev/null || true
 rm -f /etc/systemd/system/nimbus-nvr-gateway.service
 systemctl daemon-reload
 rm -rf /opt/nimbus-nvr-gateway /var/lib/nimbus-nvr-gateway
-echo "Nimbus NVR Gateway removed."
+echo "DVT Solutions NVR Gateway removed."

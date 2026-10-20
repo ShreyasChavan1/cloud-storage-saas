@@ -1,15 +1,5 @@
 import { z } from 'zod'
 
-// Optional: an empty string means "not provided". Anything else must be a
-// real address. (Not using emailField directly — it rejects '').
-const optionalEmail = z
-  .string()
-  .trim()
-  .toLowerCase()
-  .max(254)
-  .refine((v) => v === '' || z.string().email().safeParse(v).success, { message: 'Enter a valid email address' })
-  .optional()
-
 export const submitFeedbackSchema = z.object({
   body: z.object({
     rating: z
@@ -18,7 +8,6 @@ export const submitFeedbackSchema = z.object({
       .min(1, 'Choose a star rating')
       .max(5, 'Choose a star rating'),
     description: z.string().trim().min(3, 'Please tell us a little more').max(2000, 'Please keep it under 2000 characters'),
-    email: optionalEmail,
   }),
 })
 

@@ -6,6 +6,9 @@ export const trashQueryKey = ['files-trash'] as const
 
 function invalidateStats(queryClient: QueryClient) {
   queryClient.invalidateQueries({ queryKey: storageStatsQueryKey })
+  // Freeing (or using) space can lift (or trigger) the "uploads paused" state.
+  queryClient.invalidateQueries({ queryKey: ['quota'] })
+  queryClient.invalidateQueries({ queryKey: ['upload-status'] })
 }
 
 export function useTrash() {

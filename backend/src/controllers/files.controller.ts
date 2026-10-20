@@ -5,6 +5,7 @@ import os from 'os'
 import path from 'path'
 import { randomUUID } from 'crypto'
 import { filesService } from '../services/files.service'
+import { uploadGuardService } from '../services/uploadGuard.service'
 import { asyncHandler } from '../utils/asyncHandler'
 import { sendSuccess } from '../utils/response'
 import { ApiError } from '../utils/ApiError'
@@ -16,7 +17,7 @@ import { ApiError } from '../utils/ApiError'
 // able to take the whole API down). With disk storage, memory use stays flat
 // no matter how big the file is; the cap below is just a sanity limit that
 // matches the 10G client_max_body_size on the Nextcloud nginx.
-const UPLOAD_TMP_DIR = path.join(os.tmpdir(), 'nimbus-uploads')
+const UPLOAD_TMP_DIR = path.join(os.tmpdir(), 'dvt-uploads')
 const MAX_UPLOAD_BYTES = 10 * 1024 * 1024 * 1024
 const MAX_CHUNK_BYTES = 128 * 1024 * 1024
 
@@ -72,10 +73,28 @@ export const filesController = {
     }
   }),
 
+  // Runs BEFORE multer on the single-request upload route, so a blocked
+  // account is refused from the request headers alone instead of first
+  // receiving (and spooling to disk) the whole file.
+  checkUploadAllowed: asyncHandler(async (req: Request, _res: Response, next) => {
+    const declared = Number(req.headers['content-length'])
+    await uploadGuardService.assertCanUpload(req.user!.sub, Number.isFinite(declared) ? declared : 0)
+    next()
+  }),
+
+  // GET /files/upload-status — what the UI reads to show the banner and to
+  // disable the upload controls.
+  uploadStatus: asyncHandler(async (req: Request, res: Response) => {
+    const status = await uploadGuardService.getStatus(req.user!.sub)
+    return sendSuccess(res, status)
+  }),
+
   // ---- Chunked upload ---------------------------------------------------
   // POST /files/upload/session -> { uploadId, chunkSize }
   startUpload: asyncHandler(async (req: Request, res: Response) => {
-    const { path, filename } = req.body as { path?: string; filename: string; size: number }
+    const { path, filename, size } = req.body as { path?: string; filename: string; size: number }
+    // Refuse before any data is sent when the account can't take this file.
+    await uploadGuardService.assertCanUpload(req.user!.sub, size)
     const session = await filesService.startChunkedUpload(req.user!.sub, path, filename)
     return sendSuccess(res, session, 201)
   }),

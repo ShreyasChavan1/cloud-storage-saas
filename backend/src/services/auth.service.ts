@@ -297,7 +297,7 @@ export const authService = {
     if (!user) throw invalid()
 
     // The Nextcloud login/WebDAV credentials are independent random secrets
-    // (see userProvisioning.service), so a Nimbus password change does not
+    // (see userProvisioning.service), so a DVT Solutions password change does not
     // touch Nextcloud at all.
     await userRepository.update(user.id, {
       passwordHash: await hashPassword(newPassword),

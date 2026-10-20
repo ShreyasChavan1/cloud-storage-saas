@@ -105,7 +105,7 @@ export async function provisionUser(input: ProvisionUserInput): Promise<UserWith
   const nextcloudUsername = user.id
   let webdavPassword: string
   try {
-    // The Nextcloud account gets its own random secret, NOT the user's Nimbus
+    // The Nextcloud account gets its own random secret, NOT the user's DVT Solutions
     // password: that password is hashed here and must never be stored (or
     // even transmitted) in a second system. All file access goes through this
     // backend using the encrypted WebDAV app password minted below.

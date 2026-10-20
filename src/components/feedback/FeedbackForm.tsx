@@ -8,22 +8,20 @@ const inputClass =
 
 const ratingLabels = ['Poor', 'Fair', 'Good', 'Very good', 'Excellent']
 const MAX_DESCRIPTION = 2000
-const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 interface FieldErrors {
   rating?: string
   description?: string
-  email?: string
 }
 
-// Public home-page feedback form: 1-5 star rating, a description and an
-// optional email. No account needed — the backend route is public and
-// rate-limited; submissions are read from the admin dashboard.
+// Home-page feedback form: a 1-5 star rating and a description. Only shown to
+// signed-in users (the backend enforces it too) — the account supplies the
+// name and email. Submissions are read from the admin dashboard, and 4-5 star
+// ones may be featured on the home page.
 export function FeedbackForm() {
   const [rating, setRating] = useState(0)
   const [hover, setHover] = useState(0)
   const [description, setDescription] = useState('')
-  const [email, setEmail] = useState('')
   const [errors, setErrors] = useState<FieldErrors>({})
   const [serverError, setServerError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
@@ -35,7 +33,6 @@ export function FeedbackForm() {
     setRating(0)
     setHover(0)
     setDescription('')
-    setEmail('')
     setErrors({})
     setServerError(null)
     setDone(false)
@@ -46,13 +43,11 @@ export function FeedbackForm() {
     const next: FieldErrors = {}
     if (rating < 1) next.rating = 'Please choose a star rating.'
     if (description.trim().length < 3) next.description = 'Please tell us a little more.'
-    if (email.trim() && !EMAIL_PATTERN.test(email.trim())) next.email = 'Enter a valid email address, or leave it blank.'
     setErrors(next)
     setServerError(null)
     if (Object.keys(next).length > 0) return
 
     const payload: FeedbackSubmission = { rating, description: description.trim() }
-    if (email.trim()) payload.email = email.trim()
 
     setSubmitting(true)
     try {
@@ -145,27 +140,9 @@ export function FeedbackForm() {
         </div>
       </div>
 
-      <div className="mt-4">
-        <label htmlFor="feedback-email" className="text-sm font-medium text-[#253653]">
-          Email <span className="font-normal text-[#85847E]">(optional)</span>
-        </label>
-        <input
-          id="feedback-email"
-          type="email"
-          autoComplete="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="you@example.com"
-          className={`mt-1.5 ${inputClass} ${errors.email ? 'border-red-500' : ''}`}
-        />
-        {errors.email ? (
-          <p role="alert" className="mt-1 text-xs text-red-600">
-            {errors.email}
-          </p>
-        ) : (
-          <p className="mt-1 text-xs text-[#85847E]">Only add it if you would like us to reply.</p>
-        )}
-      </div>
+      <p className="mt-4 text-xs leading-5 text-[#85847E]">
+        Reviews rated 4 or 5 stars may be shown on this page with your first name and last initial.
+      </p>
 
       {serverError && (
         <p role="alert" className="mt-4 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">

@@ -2,7 +2,7 @@
 // custom MIME type carrying just enough to validate and perform the move
 // on drop, read back out with a couple of small helpers so every drop
 // target parses it the same way.
-const DRAG_TYPE = 'application/x-nimbus-entry'
+const DRAG_TYPE = 'application/x-dvt-entry'
 
 export interface DraggedEntry {
   path: string

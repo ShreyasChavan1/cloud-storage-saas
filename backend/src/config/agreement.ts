@@ -4,4 +4,4 @@
 // agreement text changes. Registration rejects a mismatched version so
 // nobody can accept a stale copy of the text from a page that was open
 // before the change.
-export const CURRENT_AGREEMENT_VERSION = '1.0'
+export const CURRENT_AGREEMENT_VERSION = '1.2'

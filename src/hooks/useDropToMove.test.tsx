@@ -28,7 +28,7 @@ function wrapper({ children }: { children: ReactNode }) {
 function fakeDataTransfer(entry: { path: string; name: string; type: 'file' | 'folder' } | null) {
   const store = new Map<string, string>()
   if (entry) {
-    store.set('application/x-nimbus-entry', JSON.stringify(entry))
+    store.set('application/x-dvt-entry', JSON.stringify(entry))
     store.set('text/plain', entry.path)
   }
   return {

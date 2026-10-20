@@ -7,7 +7,15 @@ import { ApiError } from '../utils/ApiError'
 import { env } from '../config/env'
 import { logger } from '../config/logger'
 
-const REFRESH_COOKIE_NAME = 'nimbus_refresh_token'
+const REFRESH_COOKIE_NAME = 'dvt_refresh_token'
+// Sessions started before the rebrand still carry the old cookie name. Keep
+// accepting it so the deploy does not sign everyone out; it is cleared as soon
+// as the new cookie is set (and on logout).
+const LEGACY_REFRESH_COOKIE_NAME = 'nimbus_refresh_token'
+
+function readRefreshCookie(req: Request): string | undefined {
+  return req.cookies?.[REFRESH_COOKIE_NAME] ?? req.cookies?.[LEGACY_REFRESH_COOKIE_NAME]
+}
 
 // Refresh token lives in an httpOnly cookie so it's never touchable from
 // JS (mitigates XSS token theft); the access token goes in the JSON body
@@ -19,6 +27,7 @@ function setRefreshCookie(res: Response, token: string) {
   // navigations, which would silently break refresh-token delivery on every
   // request. 'none' requires Secure, which is already true in production;
   // dev stays on 'lax' since localhost:<port> frontend/backend are same-site.
+  res.clearCookie(LEGACY_REFRESH_COOKIE_NAME, { path: '/api/auth' })
   res.cookie(REFRESH_COOKIE_NAME, token, {
     httpOnly: true,
     secure: env.NODE_ENV === 'production',
@@ -30,6 +39,7 @@ function setRefreshCookie(res: Response, token: string) {
 
 function clearRefreshCookie(res: Response) {
   res.clearCookie(REFRESH_COOKIE_NAME, { path: '/api/auth' })
+  res.clearCookie(LEGACY_REFRESH_COOKIE_NAME, { path: '/api/auth' })
 }
 
 // Read once per request rather than inline at each call site below — both
@@ -54,7 +64,7 @@ export const authController = {
   }),
 
   refresh: asyncHandler(async (req: Request, res: Response) => {
-    const token = req.cookies?.[REFRESH_COOKIE_NAME]
+    const token = readRefreshCookie(req)
     if (!token) throw ApiError.unauthorized('No refresh token provided')
 
     const { refreshToken, ...result } = await authService.refresh(token, sessionMetaFrom(req))
@@ -95,7 +105,7 @@ export const authController = {
   }),
 
   logout: asyncHandler(async (req: Request, res: Response) => {
-    const token = req.cookies?.[REFRESH_COOKIE_NAME]
+    const token = readRefreshCookie(req)
     await authService.logout(token)
     clearRefreshCookie(res)
     return sendSuccess(res, { loggedOut: true })
