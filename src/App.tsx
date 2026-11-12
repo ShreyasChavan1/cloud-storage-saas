@@ -19,6 +19,7 @@ import { AppLayout } from '@/components/layout/AppLayout'
 import { ProtectedRoute } from '@/components/ProtectedRoute'
 import Home from "./pages/Home";
 import ServiceAgreement from '@/pages/ServiceAgreement'
+import MasterAgreement from '@/pages/MasterAgreement'
 import CompanyProfile from '@/pages/CompanyProfile'
 import ClientRequirementForm from '@/pages/ClientRequirementForm'
 import AdminClientFormDetail from '@/pages/admin/AdminClientFormDetail'
@@ -36,6 +37,9 @@ export default function App() {
       <Route path="/pricing" element={<Pricing />} />
       <Route path="/share/:token" element={<PublicShare />} />
       <Route path="/service-agreement" element={<ServiceAgreement />} />
+      <Route path="/master-agreement" element={<Navigate to="/master-agreement/en" replace />} />
+      <Route path="/master-agreement/en" element={<MasterAgreement lang="en" />} />
+      <Route path="/master-agreement/mr" element={<MasterAgreement lang="mr" />} />
       <Route path="/company-profile" element={<CompanyProfile />} />
       <Route path="/client-requirement-form" element={<ClientRequirementForm />} />
 

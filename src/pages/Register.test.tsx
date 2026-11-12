@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { ThemeProvider } from '@/context/ThemeContext'
-import { AGREEMENT_VERSION } from '@/data/serviceAgreement'
+import { MASTER_AGREEMENT_VERSION } from '@/data/masterAgreement'
 import Register from './Register'
 
 const mockRegister = vi.fn()
@@ -32,20 +32,27 @@ beforeEach(() => {
   mockRegister.mockResolvedValue({ user: {}, verificationRequired: true })
 })
 
-describe('Register — service agreement', () => {
-  it('starts unticked and links to the agreement in a new tab', () => {
+describe('Register — master service agreement', () => {
+  it('starts unticked and links to both language versions, plus the storage schedule, in new tabs', () => {
     renderPage()
     expect((screen.getByRole('checkbox') as HTMLInputElement).checked).toBe(false)
-    const link = screen.getByRole('link', { name: /Storage Service Agreement/i })
-    expect(link.getAttribute('href')).toBe('/service-agreement')
-    expect(link.getAttribute('target')).toBe('_blank')
+    const expected: Array<[RegExp, string]> = [
+      [/^English$/, '/master-agreement/en'],
+      [/^मराठी$/, '/master-agreement/mr'],
+      [/Storage Service Agreement/i, '/service-agreement'],
+    ]
+    for (const [name, href] of expected) {
+      const link = screen.getByRole('link', { name })
+      expect(link.getAttribute('href')).toBe(href)
+      expect(link.getAttribute('target')).toBe('_blank')
+    }
   })
 
   it('warns and does not register when the agreement is not accepted', async () => {
     renderPage()
     fillValidDetails()
     fireEvent.click(screen.getByRole('button', { name: /create account/i }))
-    expect(await screen.findByText('Please accept the Service Agreement to continue.')).toBeTruthy()
+    expect(await screen.findByText('Please accept the Master Service Agreement to continue.')).toBeTruthy()
     expect(mockRegister).not.toHaveBeenCalled()
   })
 
@@ -55,6 +62,7 @@ describe('Register — service agreement', () => {
     fireEvent.click(screen.getByRole('checkbox'))
     fireEvent.click(screen.getByRole('button', { name: /create account/i }))
     await waitFor(() => expect(mockRegister).toHaveBeenCalledTimes(1))
-    expect(mockRegister).toHaveBeenCalledWith('Asha Kapoor', 'asha@example.com', '+919876543210', 'TestPassword123!', AGREEMENT_VERSION)
+    expect(mockRegister).toHaveBeenCalledWith('Asha Kapoor', 'asha@example.com', '+919876543210', 'TestPassword123!', MASTER_AGREEMENT_VERSION)
+    expect(MASTER_AGREEMENT_VERSION).toBe('2.0')
   })
 })

@@ -1,9 +1,12 @@
 // DVT Storage Service Agreement (MSA + SLA) — "Website / Login Acceptance
 // Version", transcribed from DVT_Storage_Service_Agreement_MSA_SLA_Website.pdf.
 //
-// Whenever the text below changes, bump AGREEMENT_VERSION here AND
-// CURRENT_AGREEMENT_VERSION in backend/src/config/agreement.ts. Registration
-// stores the version each user accepted, and the backend rejects a mismatch.
+// This is the Storage Service Agreement page (/service-agreement). Sign-up now
+// records acceptance of the Master Service Agreement (src/data/masterAgreement.ts,
+// version 2.0), which lists this agreement as an applicable service schedule.
+// AGREEMENT_VERSION below only labels this page. If this text changes in a way
+// users must re-accept, bump MASTER_AGREEMENT_VERSION and
+// CURRENT_AGREEMENT_VERSION (backend/src/config/agreement.ts) instead.
 export const AGREEMENT_VERSION = '1.2'
 
 // TODO before launch — the PDF still has these as [INSERT DATE].

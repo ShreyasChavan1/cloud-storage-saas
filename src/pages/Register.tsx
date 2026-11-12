@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/Input'
 import { Button } from '@/components/ui/Button'
 import { useAuth } from '@/context/AuthContext'
 import { AxiosError } from 'axios'
-import { AGREEMENT_VERSION } from '@/data/serviceAgreement'
+import { MASTER_AGREEMENT_VERSION } from '@/data/masterAgreement'
 
 export default function Register() {
   const { register } = useAuth()
@@ -25,7 +25,7 @@ export default function Register() {
     // Warn about the agreement up front so it's visible alongside any other
     // field error, but never let registration proceed without it.
     const missingAgreement = !agreed
-    setAgreementError(missingAgreement ? 'Please accept the Service Agreement to continue.' : '')
+    setAgreementError(missingAgreement ? 'Please accept the Master Service Agreement to continue.' : '')
     if (!name || !email || !phoneNumber || !password) {
       setError('Fill in every field to create your account.')
       return
@@ -42,7 +42,8 @@ export default function Register() {
     if (missingAgreement) return
     setLoading(true)
     try {
-      await register(name, email, phoneNumber, password, AGREEMENT_VERSION)
+      // The version ticked here is saved with the account (see AgreementAcceptance).
+      await register(name, email, phoneNumber, password, MASTER_AGREEMENT_VERSION)
       navigate(`/verify-email?email=${encodeURIComponent(email)}`)
     } catch (err) {
       const message = err instanceof AxiosError ? err.response?.data?.error?.message : undefined
@@ -73,9 +74,17 @@ export default function Register() {
               className="mt-0.5 h-4 w-4 shrink-0 rounded border-line accent-accent-500"
             />
             <span>
-              I have read and agree to the DVT{' '}
+              I have read and agree to the DVT Master Service Agreement (
+              <Link to="/master-agreement/en" target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 underline hover:text-brand-700 dark:text-brand-400">
+                English
+              </Link>
+              {' | '}
+              <Link to="/master-agreement/mr" target="_blank" rel="noopener noreferrer" lang="mr" className="font-medium text-brand-600 underline hover:text-brand-700 dark:text-brand-400">
+                मराठी
+              </Link>
+              ), including the applicable service schedules such as the{' '}
               <Link to="/service-agreement" target="_blank" rel="noopener noreferrer" className="font-medium text-brand-600 underline hover:text-brand-700 dark:text-brand-400">
-                Storage Service Agreement (MSA + SLA)
+                Storage Service Agreement
               </Link>
               .
             </span>

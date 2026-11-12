@@ -10,6 +10,7 @@ export const publicLinks = [
   { to: '/company-profile', label: 'Company Profile' },
   { to: '/client-requirement-form', label: 'Client Requirement Form' },
   { to: '/service-agreement', label: 'Service Agreement' },
+  { to: '/master-agreement/en', label: 'Master Agreement' },
 ]
 
 // These pages are designed on a fixed light background. The app's dark mode

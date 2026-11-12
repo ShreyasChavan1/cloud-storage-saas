@@ -1190,27 +1190,23 @@ const Home = () => {
                   to="/service-agreement"
                   className="block transition hover:text-[#F29A58]"
                 >
-                  Service Agreement
+                  Storage Service Agreement
                 </Link>
 
-                <a
-                  href="/legal/DVT_Master_Service_Agreement_English.pdf"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  to="/master-agreement/en"
                   className="block transition hover:text-[#F29A58]"
                 >
-                  Master Agreement (English, PDF)
-                </a>
+                  Master Agreement (English)
+                </Link>
 
-                <a
-                  href="/legal/DVT_Master_Service_Agreement_Marathi.pdf"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                <Link
+                  to="/master-agreement/mr"
                   lang="mr"
                   className="block transition hover:text-[#F29A58]"
                 >
-                  मास्टर करार (मराठी, PDF)
-                </a>
+                  मास्टर करार (मराठी)
+                </Link>
               </div>
             </div>
 
